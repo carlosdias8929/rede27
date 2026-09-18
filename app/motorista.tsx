@@ -8,6 +8,7 @@ import { Campo } from '../src/components/Campo';
 import { FotoUpload } from '../src/components/FotoUpload';
 import { Logo } from '../src/components/Logo';
 import { CICLO_CORRIDA, ICONE_CATEGORIA } from '../src/config/rede27.config';
+import { useAoVivo } from '../src/lib/aoVivo';
 import { formatarCPF } from '../src/lib/cpf';
 import { brl, dataHoraCurta, paraReais } from '../src/lib/format';
 import { mensagemDeErro, supabase } from '../src/lib/supabase';
@@ -24,6 +25,11 @@ import type { CorridaRow } from '../src/types/database';
  */
 export default function PainelMotorista() {
   const { session, papel, motorista, carregando, sair, recarregar } = useSessao();
+
+  // O motorista precisa poder voltar ao cadastro depois de salvo: troca de
+  // carro, muda de telefone, a foto ficou ruim. Antes, salvar era caminho so de
+  // ida — o painel entrava em operacao e nao havia porta de volta.
+  const [vendo, setVendo] = useState<'operacao' | 'perfil'>('operacao');
 
   if (carregando) {
     return (
@@ -56,11 +62,21 @@ export default function PainelMotorista() {
     );
   }
 
-  if (!motorista.cadastro_completo) {
-    return <Cadastro onPronto={recarregar} />;
+  // Cadastro incompleto e obrigatorio; com cadastro completo, e opcional.
+  if (!motorista.cadastro_completo || vendo === 'perfil') {
+    return (
+      <Cadastro
+        editando={motorista.cadastro_completo}
+        onPronto={async () => {
+          await recarregar();
+          setVendo('operacao');
+        }}
+        onVoltar={motorista.cadastro_completo ? () => setVendo('operacao') : undefined}
+      />
+    );
   }
 
-  return <Operacao />;
+  return <Operacao onAbrirPerfil={() => setVendo('perfil')} />;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -177,7 +193,15 @@ function Acesso() {
 /* Completar cadastro (fotos obrigatorias)                                     */
 /* -------------------------------------------------------------------------- */
 
-function Cadastro({ onPronto }: { onPronto: () => Promise<void> }) {
+function Cadastro({
+  onPronto,
+  editando = false,
+  onVoltar,
+}: {
+  onPronto: () => Promise<void>;
+  editando?: boolean;
+  onVoltar?: () => void;
+}) {
   const { motorista, sair } = useSessao();
   const insets = useSafeAreaInsets();
 
@@ -235,7 +259,9 @@ function Cadastro({ onPronto }: { onPronto: () => Promise<void> }) {
       ]}
     >
       <Logo />
-      <Text style={estilos.titulo}>Complete o seu cadastro</Text>
+      <Text style={estilos.titulo}>
+        {editando ? 'Meu perfil' : 'Complete o seu cadastro'}
+      </Text>
       <Text style={estilos.subtitulo}>
         As duas fotos sao obrigatorias e aparecem para o passageiro durante a corrida. E o que
         deixa claro quem esta chegando.
@@ -297,11 +323,14 @@ function Cadastro({ onPronto }: { onPronto: () => Promise<void> }) {
           ) : null}
 
           <Botao
-            titulo="Salvar e comecar a receber corridas"
+            titulo={editando ? 'Salvar alteracoes' : 'Salvar e comecar a receber corridas'}
             onPress={salvar}
             carregando={salvando}
             desabilitado={faltando.length > 0}
           />
+          {onVoltar ? (
+            <Botao titulo="Voltar ao painel" variante="contorno" onPress={onVoltar} />
+          ) : null}
           <Botao titulo="Sair" variante="texto" onPress={sair} />
         </View>
       </View>
@@ -313,12 +342,13 @@ function Cadastro({ onPronto }: { onPronto: () => Promise<void> }) {
 /* Operacao: fila e corrida ativa                                             */
 /* -------------------------------------------------------------------------- */
 
-function Operacao() {
+function Operacao({ onAbrirPerfil }: { onAbrirPerfil: () => void }) {
   const { motorista, sair, recarregar } = useSessao();
   const insets = useSafeAreaInsets();
 
   const [fila, setFila] = useState<CorridaRow[]>([]);
   const [minha, setMinha] = useState<CorridaRow | null>(null);
+  const [ultimaConcluida, setUltimaConcluida] = useState<CorridaRow | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [processando, setProcessando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -326,7 +356,7 @@ function Operacao() {
   const carregar = useCallback(async () => {
     if (!motorista) return;
 
-    const [abertas, ativa] = await Promise.all([
+    const [abertas, ativa, concluida] = await Promise.all([
       supabase
         .from('corridas')
         .select('*')
@@ -339,27 +369,31 @@ function Operacao() {
         .eq('motorista_id', motorista.id)
         .eq('status', 'aberta')
         .maybeSingle(),
+      supabase
+        .from('corridas')
+        .select('*')
+        .eq('motorista_id', motorista.id)
+        .eq('status', 'concluida')
+        .order('atualizada_em', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     if (abertas.error) setErro(mensagemDeErro(abertas.error));
     else setFila(abertas.data ?? []);
 
     setMinha(ativa.data ?? null);
+    setUltimaConcluida(concluida.data ?? null);
     setCarregando(false);
   }, [motorista]);
 
   useEffect(() => {
     carregar();
-
-    const canal = supabase
-      .channel('painel-motorista')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'corridas' }, () => carregar())
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(canal);
-    };
   }, [carregar]);
+
+  // Realtime mais relogio mais volta do foco: se o socket cair, a fila e o
+  // passo da corrida se corrigem sozinhos em vez de congelar.
+  useAoVivo({ canal: 'painel-motorista', tabela: 'corridas', aoMudar: carregar });
 
   const aceitar = useCallback(
     async (corrida: CorridaRow) => {
@@ -407,9 +441,14 @@ function Operacao() {
       <View style={[estilos.cabecalho, { paddingTop: insets.top + spacing.md }]}>
         <View style={estilos.cabecalhoLinha}>
           <Logo sobreEscuro />
-          <Pressable onPress={sair} accessibilityRole="button" hitSlop={10}>
-            <Text style={estilos.sair}>Sair</Text>
-          </Pressable>
+          <View style={estilos.cabecalhoAcoes}>
+            <Pressable onPress={onAbrirPerfil} accessibilityRole="button" hitSlop={10}>
+              <Text style={estilos.linkCabecalho}>Meu perfil</Text>
+            </Pressable>
+            <Pressable onPress={sair} accessibilityRole="button" hitSlop={10}>
+              <Text style={estilos.sair}>Sair</Text>
+            </Pressable>
+          </View>
         </View>
         <Text style={estilos.cabecalhoTexto}>
           {motorista?.nome} · {motorista?.veiculo_descricao || 'veiculo nao informado'}
@@ -445,6 +484,23 @@ function Operacao() {
                 carregando={processando === minha.id}
               />
             ) : null}
+          </View>
+        ) : null}
+
+        {!minha && ultimaConcluida ? (
+          <View style={[estilos.cartaoConcluido, shadow(1)]}>
+            <Text style={estilos.concluidoTitulo}>Corrida concluida</Text>
+            <Text style={estilos.destino} numberOfLines={1}>
+              {ultimaConcluida.destino_texto}
+            </Text>
+            <Text style={estilos.concluidoValor}>
+              Voce recebe {brl(paraReais(ultimaConcluida.valor_motorista_centavos ?? 0))}
+            </Text>
+            <Text style={estilos.meta}>
+              Corrida de {brl(paraReais(ultimaConcluida.valor_final_centavos ?? 0))} ·{' '}
+              taxa REDE27 {ultimaConcluida.taxa_empresa_percentual}% ·{' '}
+              {dataHoraCurta(ultimaConcluida.atualizada_em)}
+            </Text>
           </View>
         ) : null}
 
@@ -528,6 +584,18 @@ const estilos = StyleSheet.create({
   },
   cabecalhoLinha: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cabecalhoTexto: { color: palette.navy100, fontSize: font.size.sm },
+  cabecalhoAcoes: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  linkCabecalho: { color: palette.white, fontSize: font.size.sm, fontWeight: font.weight.semibold },
+  cartaoConcluido: {
+    backgroundColor: colors.successBg,
+    borderRadius: radius.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.success,
+    padding: spacing.lg,
+    gap: spacing.xs,
+  },
+  concluidoTitulo: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.success },
+  concluidoValor: { fontSize: font.size.lg, fontWeight: font.weight.heavy, color: colors.primaryDark },
   sair: { color: palette.gold300, fontSize: font.size.sm, fontWeight: font.weight.semibold },
   conteudo: {
     padding: spacing.lg,

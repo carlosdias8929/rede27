@@ -19,6 +19,7 @@ import { Campo } from '../src/components/Campo';
 import { Logo } from '../src/components/Logo';
 import { Protocolo } from '../src/components/Protocolo';
 import { PROTOCOLO_03 } from '../src/config/rede27.config';
+import { useAoVivo } from '../src/lib/aoVivo';
 import { iniciarAlarme, liberarAudio, pararAlarme, precisaDeGesto } from '../src/lib/alarme';
 import { formatarCPF } from '../src/lib/cpf';
 import { brl, dataHoraCurta, paraCentavos, paraReais } from '../src/lib/format';
@@ -246,18 +247,18 @@ function AbaAlertas({ onContar }: { onContar: (n: number) => void }) {
 
   useEffect(() => {
     carregar();
-
-    const canal = supabase
-      .channel('admin-alertas-03')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'alertas_03' }, () =>
-        carregar(),
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(canal);
-    };
   }, [carregar]);
+
+  // Um alerta de emergencia que nao chega e o pior caso do sistema inteiro.
+  // Alem do Realtime, conferimos de tempos em tempos e ao voltar o foco, com
+  // intervalo curto: alguns segundos de atraso sao aceitaveis; perder o alerta
+  // nao e.
+  useAoVivo({
+    canal: 'admin-alertas-03',
+    tabela: 'alertas_03',
+    aoMudar: carregar,
+    intervaloMs: 5000,
+  });
 
   // Alarme e pisca-pisca enquanto houver alerta ativo.
   useEffect(() => {

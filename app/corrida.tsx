@@ -9,6 +9,7 @@ import { Logo } from '../src/components/Logo';
 import { Protocolo } from '../src/components/Protocolo';
 import { CICLO_CORRIDA } from '../src/config/rede27.config';
 import { brl, paraReais } from '../src/lib/format';
+import { useAoVivo } from '../src/lib/aoVivo';
 import { localizacaoAtual } from '../src/lib/geo';
 import { mensagemDeErro, supabase } from '../src/lib/supabase';
 import { useSessao } from '../src/state/sessao';
@@ -75,23 +76,16 @@ export default function Corrida() {
       .then(({ data }) => setMotorista(data ?? null));
   }, [corrida?.motorista_id]);
 
-  // A tela acompanha o banco: o passageiro nao recarrega nada.
-  useEffect(() => {
-    if (!id) return;
-
-    const canal = supabase
-      .channel(`corrida:${id}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'corridas', filter: `id=eq.${id}` },
-        (payload) => setCorrida(payload.new as CorridaRow),
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(canal);
-    };
-  }, [id]);
+  // A tela acompanha o banco sozinha. Relemos do banco a cada sinal em vez de
+  // usar o conteudo do evento: assim um evento perdido ou fora de ordem nao
+  // deixa a tela mostrando um passo que ja passou.
+  useAoVivo({
+    canal: `corrida:${id}`,
+    tabela: 'corridas',
+    filtro: id ? `id=eq.${id}` : undefined,
+    aoMudar: buscar,
+    ativo: Boolean(id),
+  });
 
   useEffect(() => {
     if (corrida?.status === 'concluida' && !carteiraAtualizada.current) {
