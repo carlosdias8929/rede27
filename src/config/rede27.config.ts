@@ -1,117 +1,147 @@
 /**
  * ============================================================================
- * PONTO UNICO DE AJUSTE — REDE27 MVP
+ * PONTO UNICO DE AJUSTE — REDE27
  * ============================================================================
- * Tudo que ainda depende de resposta do cliente (Alberto) esta neste arquivo.
- * Quando a resposta chegar, muda-se AQUI e nada mais precisa ser tocado.
+ * O que da para mudar sem mexer em tela nenhuma mora aqui.
  *
- * Status apos as respostas do Alberto em 18/09 (ver docs/PENDENCIAS.md):
- *
- *   RESOLVIDO
- *   - Precos por categoria -> CATEGORIAS (valor oficial vive na tabela do banco)
- *   - Quem recebe a chamada -> MOTORISTA.modo, painel web simulado, confirmado
- *   - Validacao de CPF -> CPF.validacao, algoritmica
- *   - Cores -> src/theme/colors.ts, azul #0A1931 e dourado #FFC700
- *
- *   REDEFINIDO PELO CLIENTE, AGUARDANDO FECHAR ESCOPO
- *   - A "trava 03" nao e uma trava do botao CHAMAR: e um BOTAO DE PANICO. O
- *     passageiro segura 3 segundos e dispara alerta com localizacao no painel
- *     Admin. O mecanismo de segurar 3s (BotaoChamar) serve; o que ele dispara,
- *     nao.
- *   - Os 5 passos nao sao o fluxo da corrida: sao os passos desse alerta
- *     (acionar -> enviar localizacao -> alerta no Admin -> ligar -> encerrar).
- *     O PROTOCOLO_5_PASSOS abaixo vira o ciclo de vida da corrida, que o painel
- *     do motorista precisa de qualquer forma.
- *
- *   Nao mexer nesses dois antes de fechar A ou B: muda modelo de dados.
+ * O que NAO mora aqui, de proposito: precos, taxa da empresa, cidades e fator
+ * de rota. Esses o cliente edita pelo painel Admin, e o valor que vale e o do
+ * banco. O que existir neste arquivo sobre eles e so fallback offline.
  * ============================================================================
  */
 
 // ---------------------------------------------------------------------------
-// 1. TRAVA DE SEGURANCA "03"
-// ---------------------------------------------------------------------------
-export type Trava03Modo =
-  /** Passageiro mantem o botao CHAMAR pressionado por 3 segundos. */
-  | 'SEGURAR_3S'
-  /** Passageiro digita o codigo "03" para liberar a chamada. */
-  | 'CODIGO_03';
-
-export const TRAVA_03 = {
-  /** <<< TROCAR AQUI quando o cliente responder. Os dois modos funcionam. */
-  modo: 'SEGURAR_3S' as Trava03Modo,
-
-  /** Modo SEGURAR_3S: tempo de pressao necessario, em milissegundos. */
-  duracaoMs: 3000,
-
-  /** Modo CODIGO_03: codigo esperado no campo de liberacao. */
-  codigo: '03',
-
-  /** Texto exibido ao passageiro antes de liberar. */
-  rotulo: {
-    SEGURAR_3S: 'Segure por 3 segundos para chamar',
-    CODIGO_03: 'Digite o codigo 03 para liberar a chamada',
-  } as Record<Trava03Modo, string>,
-} as const;
-
-// ---------------------------------------------------------------------------
-// 2. PROTOCOLO DE 5 PASSOS
+// PROTOCOLO 03 — botao de emergencia
+//
+// Definicao do cliente em 18/09: o passageiro segura o "03" por 3 segundos e
+// dispara um alerta silencioso no painel Admin, com localizacao.
+//
+// Nao confundir com o botao CHAMAR: o 03 nao trava, nem confirma, nem cancela
+// corrida. E um pedido de socorro.
 // ---------------------------------------------------------------------------
 export type PassoProtocolo = {
-  /** Numero do passo, 1 a 5. */
   numero: 1 | 2 | 3 | 4 | 5;
   /** Chave estavel gravada no banco (nao traduzir). */
   chave: string;
   titulo: string;
   descricao: string;
-  /** Quem dispara a transicao para este passo. */
-  acionadoPor: 'passageiro' | 'motorista' | 'sistema';
+  onde: 'app' | 'admin';
 };
 
-/**
- * TEXTOS PROVISORIOS — aguardando a lista oficial do cliente.
- * A estrutura (5 passos, avanco sequencial, gravacao em banco) ja esta pronta;
- * trocar titulo/descricao aqui nao exige nenhuma outra alteracao.
- */
-export const PROTOCOLO_5_PASSOS: PassoProtocolo[] = [
+export const PROTOCOLO_03 = {
+  /** Tempo de pressao para acionar, em milissegundos. */
+  duracaoMs: 3000,
+
+  /**
+   * Combinado por escrito com o cliente: o alerta e SILENCIOSO para o motorista
+   * e so toca no painel Admin. Se o passageiro acionou por causa do motorista,
+   * um som no celular dele avisaria exatamente quem representa o risco.
+   */
+  silenciosoParaMotorista: true,
+
+  /** Alarme sonoro no painel Admin enquanto houver alerta ativo. */
+  alarmeNoAdmin: true,
+
+  passos: [
+    {
+      numero: 1,
+      chave: 'acionado',
+      titulo: 'Passageiro aciona o 03',
+      descricao: 'O passageiro segura o botao 03 por 3 segundos dentro do aplicativo.',
+      onde: 'app',
+    },
+    {
+      numero: 2,
+      chave: 'localizacao_enviada',
+      titulo: 'App envia localizacao',
+      descricao: 'Localizacao e dados da corrida seguem para o painel Admin.',
+      onde: 'app',
+    },
+    {
+      numero: 3,
+      chave: 'alerta_exibido',
+      titulo: 'Alerta no painel Admin',
+      descricao: 'O painel mostra "PROTOCOLO 03 ATIVADO" em vermelho, com aviso sonoro.',
+      onde: 'admin',
+    },
+    {
+      numero: 4,
+      chave: 'contato_realizado',
+      titulo: 'Central entra em contato',
+      descricao: 'A central liga para o passageiro e para o motorista pelo painel.',
+      onde: 'admin',
+    },
+    {
+      numero: 5,
+      chave: 'encerrado',
+      titulo: 'Alerta encerrado',
+      descricao: 'A central encerra o alerta e ele sai da lista de ativos.',
+      onde: 'admin',
+    },
+  ] as PassoProtocolo[],
+
+  /**
+   * Gravacao de audio e ligacao automatica para a policia: fase 2, conforme
+   * combinado. Este MVP avisa a central; nao substitui o 190.
+   */
+  avisoLegal: 'O 03 avisa a central da REDE27. Nao substitui o 190.',
+} as const;
+
+// ---------------------------------------------------------------------------
+// CICLO DA CORRIDA
+//
+// Os cinco passos do servico em si. Antes isto se chamava "protocolo de 5
+// passos"; o nome mudou quando o cliente esclareceu que aquele nome pertence ao
+// 03. A estrutura continua a mesma e o painel do motorista depende dela.
+// ---------------------------------------------------------------------------
+export type PassoCorrida = {
+  numero: 1 | 2 | 3 | 4 | 5;
+  chave: string;
+  titulo: string;
+  descricao: string;
+  /** Rotulo do botao que leva a corrida para este passo, no painel do motorista. */
+  acaoMotorista?: string;
+};
+
+export const CICLO_CORRIDA: PassoCorrida[] = [
   {
     numero: 1,
     chave: 'chamada_enviada',
     titulo: 'Chamada enviada',
-    descricao: 'Sua chamada foi registrada e esta sendo distribuida aos motoristas da REDE27.',
-    acionadoPor: 'passageiro',
+    descricao: 'A chamada foi registrada e esta aguardando um motorista.',
   },
   {
     numero: 2,
     chave: 'motorista_aceitou',
     titulo: 'Motorista aceitou',
-    descricao: 'Um motorista da rede aceitou a sua chamada e esta a caminho.',
-    acionadoPor: 'motorista',
+    descricao: 'Um motorista aceitou a chamada e esta a caminho.',
+    acaoMotorista: 'Aceitar corrida',
   },
   {
     numero: 3,
     chave: 'embarque_confirmado',
     titulo: 'Embarque confirmado',
-    descricao: 'Motorista chegou ao ponto de partida e o embarque foi confirmado.',
-    acionadoPor: 'motorista',
+    descricao: 'O motorista chegou ao ponto de partida e o embarque foi confirmado.',
+    acaoMotorista: 'Confirmar embarque',
   },
   {
     numero: 4,
     chave: 'em_deslocamento',
     titulo: 'Em deslocamento',
-    descricao: 'Trajeto em andamento ate o destino informado.',
-    acionadoPor: 'sistema',
+    descricao: 'Trajeto em andamento ate o destino.',
+    acaoMotorista: 'Iniciar deslocamento',
   },
   {
     numero: 5,
     chave: 'servico_concluido',
     titulo: 'Servico concluido',
     descricao: 'Chegada ao destino, pagamento debitado da carteira e servico encerrado.',
-    acionadoPor: 'motorista',
+    acaoMotorista: 'Concluir e receber',
   },
 ];
 
 // ---------------------------------------------------------------------------
-// 3. CATEGORIAS DE SERVICO
+// CATEGORIAS — fallback offline. O que vale esta na tabela `categorias`.
 // ---------------------------------------------------------------------------
 export type CategoriaChave = 'com_ar' | 'sem_ar' | 'transporte_bens';
 
@@ -119,17 +149,10 @@ export type Categoria = {
   chave: CategoriaChave;
   nome: string;
   descricao: string;
-  /** Tarifa base em reais (fallback — o valor oficial vem da tabela `categorias`). */
   tarifaBase: number;
-  /** Preco por quilometro em reais (fallback). */
   precoKm: number;
-  icone: string;
 };
 
-/**
- * Precos confirmados pelo Alberto em 18/09. Editaveis sem rebuild: valem os da
- * tabela `categorias` no Supabase; os daqui sao so o fallback offline.
- */
 export const CATEGORIAS: Categoria[] = [
   {
     chave: 'sem_ar',
@@ -137,7 +160,6 @@ export const CATEGORIAS: Categoria[] = [
     descricao: 'Carro de passeio sem ar-condicionado. Tarifa reduzida.',
     tarifaBase: 7.0,
     precoKm: 2.5,
-    icone: 'car',
   },
   {
     chave: 'com_ar',
@@ -145,7 +167,6 @@ export const CATEGORIAS: Categoria[] = [
     descricao: 'Carro de passeio com ar-condicionado.',
     tarifaBase: 10.0,
     precoKm: 3.0,
-    icone: 'snow',
   },
   {
     chave: 'transporte_bens',
@@ -153,44 +174,52 @@ export const CATEGORIAS: Categoria[] = [
     descricao: 'Envelope ou caixa pequena em carro de passeio.',
     tarifaBase: 12.0,
     precoKm: 3.5,
-    icone: 'cube',
   },
 ];
 
+export const ICONE_CATEGORIA: Record<string, string> = {
+  sem_ar: '🚗',
+  com_ar: '❄️',
+  transporte_bens: '📦',
+};
+
 // ---------------------------------------------------------------------------
-// 4. MOTORISTA
+// DISTANCIA E PRECO
 // ---------------------------------------------------------------------------
-export const MOTORISTA = {
+export const DISTANCIA = {
   /**
-   * 'painel_simulado' — a chamada cai num painel web simples (rota /motorista),
-   * usado para demonstrar e testar o fluxo sem app de motorista.
-   * 'app_proprio'     — proxima fase.
+   * Fallback do multiplicador aplicado a distancia em linha reta para aproximar
+   * o trajeto por rua. O valor que vale esta em `configuracoes.fator_rota`,
+   * editavel no Admin.
    */
-  modo: 'painel_simulado' as 'painel_simulado' | 'app_proprio',
+  fatorRotaPadrao: 1.3,
+
+  /** Fallback da distancia minima cobrada, em km. */
+  minimaPadrao: 1,
+
+  /**
+   * Enquanto nao houver API de rotas, a distancia e estimada. O app diz isso ao
+   * passageiro em vez de fingir precisao que nao tem.
+   */
+  aviso: 'Distancia estimada. O valor final pode variar conforme o trajeto.',
 } as const;
 
 // ---------------------------------------------------------------------------
-// 5. CPF E CARTEIRA
+// CPF E CARTEIRA
 // ---------------------------------------------------------------------------
 export const CPF = {
-  /**
-   * 'algoritmica' — formato + digitos verificadores (padrao Receita Federal).
-   * 'base_externa' — consulta a base externa (Serpro/parceiro): proxima fase,
-   *                  exige contrato e chave de API do cliente.
-   */
+  /** 'algoritmica' = formato + digitos verificadores. Base externa: fase 2. */
   validacao: 'algoritmica' as 'algoritmica' | 'base_externa',
 
-  /** Bloqueia CPFs de teste com todos os digitos iguais (111.111.111-11 etc). */
+  /** Bloqueia CPFs de teste com todos os digitos iguais. */
   bloquearRepetidos: true,
 
   /**
    * O login e por CPF, mas o Supabase Auth trabalha com e-mail: cada CPF vira
-   * `<cpf>@<dominio>`. O passageiro nunca ve esse endereco e nada e enviado
-   * para ele (a confirmacao de e-mail fica desligada no painel do Supabase).
+   * `<cpf>@<dominio>`. O usuario nunca ve esse endereco e nada e enviado.
    *
-   * ATENCAO: o Supabase valida o dominio e recusa o cadastro se ele nao
-   * resolver no DNS — `passageiro.rede27.app` foi recusado por isso. Use um
-   * dominio real, de preferencia o do proprio cliente.
+   * ATENCAO: o Supabase recusa dominio que nao resolve no DNS —
+   * `passageiro.rede27.app` foi rejeitado por isso.
    *
    * <<< TROCAR pelo dominio oficial da REDE27 quando o cliente confirmar.
    */
@@ -198,16 +227,8 @@ export const CPF = {
 } as const;
 
 export const CARTEIRA = {
-  /**
-   * 'saldo_simples' — saldo creditado manualmente/administrativamente (MVP).
-   * 'recarga_pagamento' — recarga via PIX/cartao: proxima fase.
-   */
+  /** 'saldo_simples' = credito lancado pela administracao. Recarga: fase 2. */
   modo: 'saldo_simples' as 'saldo_simples' | 'recarga_pagamento',
-
-  /** Saldo de cortesia creditado no primeiro acesso, em reais. Zero desativa. */
-  saldoInicial: 0,
-
-  /** Impede chamar corrida sem saldo suficiente para a tarifa base. */
   exigirSaldoParaChamar: true,
 } as const;
 
@@ -219,4 +240,5 @@ export const MARCA = {
   slogan: 'Transporte de passageiros, bens e encomendas',
   moeda: 'BRL',
   locale: 'pt-BR',
+  ufPadrao: 'BA',
 } as const;

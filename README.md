@@ -1,75 +1,110 @@
-# REDE27 — MVP
+# REDE27
 
-Aplicativo de transporte de passageiros, bens e encomendas.
-Codigo unico para **Android (APK)** e **web**, com backend no **Supabase**.
+Transporte de passageiros, bens e encomendas. **Três produtos, um código:**
+
+| Produto | Rota | Para quem |
+| --- | --- | --- |
+| App do passageiro | `/login` → `/inicio` → `/corrida` | APK Android e web |
+| Painel do motorista | `/motorista` | web |
+| Painel Admin | `/admin` | web |
 
 ## Stack
 
-| Camada | Escolha | Por que |
+| Camada | Escolha | Por quê |
 | --- | --- | --- |
-| App | Expo SDK 57 + React Native + expo-router | Um codigo gera o APK e a versao web |
-| Backend | Supabase (Postgres + Auth + Realtime) | Banco relacional deixa a carteira consistente |
-| Build APK | EAS Build (nuvem) | Nao exige Android SDK/JDK na maquina |
+| App | Expo SDK 57 + React Native + expo-router | um código gera o APK e os painéis web |
+| Backend | Supabase (Postgres + Auth + Realtime + Storage) | banco relacional deixa a carteira consistente |
+| Mapa | Nominatim (OpenStreetMap) + Haversine | gratuito e provisório, conforme combinado |
+| Build APK | EAS Build (nuvem) | não exige Android SDK/JDK na máquina |
 
-## Telas
+## Os dois fluxos de cinco passos
 
-| # | Rota | Conteudo |
-| --- | --- | --- |
-| 1 | `/login` | Acesso e cadastro por CPF (com validacao de digito verificador) |
-| 2 | `/inicio` | "Para onde vamos?" com voz, categorias com preco, carteira, botao CHAMAR com trava 03 |
-| 3 | `/corrida` | Protocolo de 5 passos, atualizado em tempo real |
-| — | `/carteira` | Extrato (apoio da tela 2, nao conta como tela principal) |
-| — | `/motorista` | Painel que recebe as chamadas nesta fase (simulacao, nao entra nas 3 telas) |
+São coisas diferentes, e confundi-las já custou retrabalho uma vez.
+
+**Protocolo 03 — botão de pânico** (`alertas_03`)
+
+1. Passageiro segura o 03 por 3 segundos
+2. App envia localização + dados da corrida
+3. Painel Admin mostra "PROTOCOLO 03 ATIVADO" em vermelho, com som
+4. Admin liga para o passageiro e para o motorista
+5. Admin encerra o alerta
+
+**Ciclo da corrida** (`corridas`)
+
+1. Chamada enviada → 2. Motorista aceitou → 3. Embarque confirmado →
+4. Em deslocamento → 5. Serviço concluído (debita a carteira e faz o rateio)
+
+> **O 03 é silencioso para o motorista.** O som toca só no painel Admin. Se o
+> passageiro acionou por causa do motorista, um alarme no carro avisaria
+> exatamente quem representa o risco. O motorista não tem permissão de leitura
+> em `alertas_03` — isso é regra de banco, não de tela.
 
 ## Como rodar
 
 ```bash
 npm install
-cp .env.example .env          # preencher com URL e chave anon do Supabase
-npm run web                   # versao web em desenvolvimento
+cp .env.example .env          # URL e chave anon do Supabase
+npm run web                   # desenvolvimento
 npm run android               # app no aparelho/emulador
-npm run typecheck             # checagem de tipos
-npm test                      # testes de validacao de CPF
+npm run typecheck
+npm test                      # validação de CPF
 npm run test:fluxo            # fluxo completo contra o Supabase real
 ```
 
-`npm run test:fluxo` sobe tres contas de teste, abre uma chamada, percorre os
-cinco passos pelo painel do operador e confere o debito na carteira — tudo com a
-mesma chave anon que o aplicativo usa, sem atalho de service_role. Se passar ali,
-passa no app. Ele avisa o que falta preparar (operador autorizado, saldo) e
+`npm run test:fluxo` cria as contas dos três papéis, roda a corrida inteira,
+aciona e encerra um protocolo 03 e confere o rateio — tudo com a mesma chave
+anon dos apps, sem atalho de service_role. Ele avisa o que falta preparar e
 imprime o SQL pronto.
 
 ## Banco de dados
 
-Projeto em uso: **REDE27**, regiao `sa-east-1` (Sao Paulo).
-Aplicar na ordem, pelo SQL Editor do Supabase ou pela CLI:
+Projeto **REDE27**, região `sa-east-1` (São Paulo). Aplicar em ordem:
 
-1. `0001_init.sql` — tabelas, RLS, carteira e protocolo
-2. `0002_operadores.sql` — papel de operador do painel
-3. `0003_realtime_e_permissoes.sql` — publica `corridas` no Realtime e fecha as RPCs para `anon`
-4. `0004_corrige_eh_operador.sql` — conserta a leitura de `corridas` (ver aviso abaixo)
-5. `0005_revoga_eh_operador_anon.sql` — tira `eh_operador` do alcance do papel anonimo
+| Migração | O que faz |
+| --- | --- |
+| `0001_init` | tabelas base, RLS, carteira, ciclo da corrida |
+| `0002_operadores` | primeiro papel de operador do painel |
+| `0003_realtime_e_permissoes` | publica `corridas` no Realtime, fecha RPCs para `anon` |
+| `0004_corrige_eh_operador` | conserta leitura de corridas (ver aviso abaixo) |
+| `0005_revoga_eh_operador_anon` | tira `eh_operador` do alcance anônimo |
+| `0006_papeis_cidades_config` | motoristas, administradores, cidades, configurações |
+| `0007_protocolo_03_e_corridas` | alertas 03, motorista na corrida, preço por km |
+| `0008_cadastro_fotos_realtime` | cadastro por papel, Storage das fotos, Realtime dos alertas |
+| `0009_distancia_km_search_path` | fixa `search_path` da função de distância |
+| `0010_admin_le_passageiros` | Admin lê contato do passageiro (sem isso o passo 4 não funciona) |
 
-> **Cuidado ao mexer em permissoes de funcao.** As policies de SELECT de
-> `corridas` e `corrida_eventos` chamam `public.eh_operador()`, e a expressao de
-> uma policy roda com os direitos de **quem consulta**, nao do dono da tabela.
-> Revogar `EXECUTE` dessa funcao do papel `authenticated` derruba toda leitura
-> de corridas com `permission denied for function eh_operador` — a tela 3 e o
-> painel do motorista param juntos. Foi exatamente o que aconteceu entre a
-> 0003 e a 0004.
+> **Cuidado ao mexer em permissões de função.** Policies de SELECT chamam
+> `eh_admin()`, `eh_motorista()` e afins, e a expressão de uma policy roda com
+> os direitos de **quem consulta**, não do dono da tabela. Revogar `EXECUTE`
+> dessas funções de `authenticated` derruba a leitura inteira com
+> `permission denied for function ...`. Foi o que aconteceu entre a 0003 e a
+> 0004. Além disso, `create or replace function` reconcede `EXECUTE` a `PUBLIC`
+> — sempre revogue de novo depois de recriar.
 
-Depois, autorizar a conta que vai usar o painel do motorista:
+### Configuração obrigatória no painel do Supabase
+
+Não dá para fazer por SQL.
+
+**1. Desligar "Confirm email"** em Authentication → Sign In / Providers → Email.
+O login é por CPF, mapeado para `<cpf>@<domínio>`. Com a confirmação ligada, o
+Supabase tenta *enviar* e-mail para esses endereços: trava no limite de envio
+(`email rate limit exceeded`) e o usuário fica sem sessão.
+
+**2. Conferir o domínio de login.** O Supabase recusa domínio que não resolve no
+DNS — `passageiro.rede27.app` foi rejeitado. O valor está em `CPF.dominioLogin`
+(`src/config/rede27.config.ts`).
+
+### Criar um administrador
 
 ```sql
-insert into public.operadores (id, nome)
-select id, 'Painel REDE27'
+insert into public.administradores (id, nome)
+select id, 'Central REDE27'
   from auth.users
- where email = '<cpf-com-11-digitos>@rede27.app'   -- ver CPF.dominioLogin
+ where email = '<cpf-com-11-digitos>@rede27.app'
 on conflict (id) do update set ativo = true;
 ```
 
-Creditar saldo na carteira de um passageiro (a recarga por pagamento fica para a
-proxima fase):
+### Creditar a carteira de um passageiro
 
 ```sql
 select public.creditar_carteira(
@@ -79,67 +114,72 @@ select public.creditar_carteira(
 );
 ```
 
-### Configuracao necessaria no painel do Supabase
+## Segurança da carteira e dos papéis
 
-Dois ajustes **obrigatorios**, sem os quais nenhum cadastro funciona. Nao da
-para faze-los por SQL nem por migracao — sao do painel.
+O saldo **nunca** é escrito pelo aplicativo — não existe policy de `update` em
+`carteiras`. Toda movimentação passa por funções `security definer`:
 
-**1. Desligar a confirmacao de e-mail.**
-Em **Authentication -> Sign In / Providers -> Email**, desligar *Confirm email*.
+- `criar_corrida` — calcula distância e preço no servidor e confere o saldo;
+- `aceitar_corrida` — exige motorista ativo **com as duas fotos**;
+- `avancar_protocolo` — só o motorista da corrida, ou um admin;
+- `cancelar_corrida` — só o dono da chamada;
+- `acionar_03` — só passageiro, e um alerta ativo por vez;
+- `registrar_passo_03` / `encerrar_03` — só admin;
+- `creditar_carteira` — administrativa, fora da API.
 
-O login e por CPF: cada CPF vira um endereco interno `<cpf>@<dominio>` que o
-passageiro nunca ve. Com a confirmacao ligada, o Supabase tenta **enviar** um
-e-mail para esse endereco, o que (a) trava no limite de envio do SMTP padrao —
-`email rate limit exceeded` ja no terceiro cadastro — e (b) deixa o passageiro
-sem sessao esperando um link que nunca chega.
+As linhas são travadas com `for update`, então toque duplo não debita duas vezes.
 
-**2. Conferir o dominio de login.**
-O Supabase recusa dominios que nao resolvem no DNS. `passageiro.rede27.app` foi
-recusado com `Email address ... is invalid`. O dominio usado fica em
-`CPF.dominioLogin` (`src/config/rede27.config.ts`) — o ideal e apontar para um
-dominio real da REDE27.
+## Preço, taxa e cidades
 
-## Seguranca da carteira
+Tudo editável no painel Admin, sem republicar:
 
-O saldo **nunca** e escrito pelo aplicativo. Nao existe policy de `update` em
-`carteiras`. Toda movimentacao passa por funcoes `security definer` no banco:
+- **Preços** por categoria (tabela `categorias`, em centavos);
+- **Taxa da empresa** (`configuracoes.taxa_empresa_percentual`, hoje 25%). O
+  rateio é gravado em cada corrida concluída — mudar o percentual não reescreve
+  o passado;
+- **Fator de rota** (`configuracoes.fator_rota`, hoje 1,3);
+- **Cidades**, sem limite de quantidade.
 
-- `criar_corrida` — calcula o preco no servidor e confere o saldo antes de abrir;
-- `avancar_protocolo` — so operador autorizado avanca; no passo 5 debita e encerra;
-- `cancelar_corrida` — so o dono da chamada cancela;
-- `creditar_carteira` — administrativa, sem permissao para `anon`/`authenticated`.
+**Distância é aproximada.** Sem API de rotas, usamos linha reta multiplicada
+pelo fator de rota, com mínimo configurável. O app diz isso ao passageiro em vez
+de fingir precisão. Quando entrar Google Maps (exige conta de faturamento do
+cliente), sai só `src/lib/geo.ts` e a função `distancia_km` — o preço já é
+calculado no servidor.
 
-As linhas sao travadas com `for update`, entao dois toques simultaneos nao
-debitam duas vezes.
+## Fotos do motorista
 
-## Precos
-
-Ficam na tabela `categorias`, em centavos. O cliente ajusta por SQL ou pela
-interface do Supabase e o app passa a usar o valor novo **sem republicar**.
-Os valores em `src/config/rede27.config.ts` sao apenas o fallback offline.
+Bucket `motoristas` no Storage, **público para leitura** de propósito: a foto do
+motorista e a do veículo existem para o passageiro ver. A escrita é restrita —
+cada motorista só grava na pasta com o próprio id. A coluna
+`motoristas.cadastro_completo` é calculada pelo banco e é ela que libera o
+aceite de corridas.
 
 ## Entrega
 
 ```bash
-npm run build:web             # gera dist/ — hospedar em qualquer servidor estatico
-npx eas build -p android --profile preview   # gera o APK na nuvem
+npm run build:web             # dist/ — hospedar em qualquer servidor estático
+npx eas build -p android --profile preview   # APK na nuvem
 ```
 
-Publicacao na Play Store nao entra nesta fase: contas novas passam por um
-periodo de teste fechado exigido pelo Google.
+Publicação na Play Store não entra nesta fase: contas novas passam por um
+período de teste fechado exigido pelo Google.
 
-## Estado da verificacao
+## Estado da verificação
 
 | O que | Como foi verificado |
 | --- | --- |
-| Validacao de CPF | 10 testes unitarios (`npm test`) |
-| Telas e navegacao | versao web dirigida em navegador real, sem erro de console |
-| Trava 03 | soltar em 1s nao chama; segurar os 3s chama |
-| Fluxo completo | `npm run test:fluxo` — 29 verificacoes, todas passando |
-| Tempo real | operador avancou os 5 passos e a tela do passageiro acompanhou sem recarregar |
-| Isolamento | passageiro nao le nem avanca corrida alheia; `anon` barrado em 13 tentativas |
+| Validação de CPF | 10 testes unitários (`npm test`) |
+| Fluxo completo | `npm run test:fluxo` — 40+ verificações contra o banco real |
+| Protocolo 03 | acionado fora do navegador e recebido no Admin sem recarregar |
+| Papéis | motorista não lê alerta 03; passageiro não edita preço nem cidade |
+| Fotos obrigatórias | aceite bloqueado enquanto faltar foto |
+| Rateio | soma empresa + motorista fecha com o valor da corrida |
+| Telas | os três produtos dirigidos em navegador real, sem erro de console |
 
-## Pontos ainda em aberto
+## O que ficou para a fase 2
 
-Tudo que depende de resposta do cliente esta reunido em
-`src/config/rede27.config.ts` e listado em [docs/PENDENCIAS.md](docs/PENDENCIAS.md).
+Gravação de áudio no 03, ligação automática para a polícia, rastreamento em
+segundo plano, repasse automático ao motorista, recarga por pagamento, consulta
+de CPF em base externa, API de rotas paga e publicação na Play Store.
+
+Pendências abertas: [docs/PENDENCIAS.md](docs/PENDENCIAS.md).

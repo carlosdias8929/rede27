@@ -1,66 +1,70 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { PROTOCOLO_5_PASSOS } from '../config/rede27.config';
 import { colors, font, palette, radius, spacing } from '../theme';
 
+export type PassoExibido = {
+  numero: number;
+  titulo: string;
+  descricao: string;
+};
+
 type Props = {
-  /** Passo em que a corrida esta agora (1 a 5). */
+  titulo: string;
+  passos: PassoExibido[];
+  /** Passo em que o fluxo esta agora. */
   passoAtual: number;
-  /** Corrida cancelada: o passo corrente deixa de piscar como "em andamento". */
-  cancelada?: boolean;
-  /**
-   * Corrida concluida: o passo 5 tambem vira concluido. Sem isto ele ficaria
-   * marcado como "EM ANDAMENTO" numa corrida ja encerrada e paga.
-   */
-  concluida?: boolean;
+  /** Fluxo terminado: o passo corrente tambem aparece concluido. */
+  concluido?: boolean;
+  /** Fluxo interrompido: nada fica marcado como "em andamento". */
+  interrompido?: boolean;
+  /** Vermelho em vez de azul no passo corrente — usado no protocolo 03. */
+  emergencia?: boolean;
 };
 
 /**
- * Protocolo de 5 passos do servico.
- *
- * Os textos vem de PROTOCOLO_5_PASSOS (src/config/rede27.config.ts) e sao
- * provisorios ate o cliente enviar a lista oficial. A estrutura nao muda:
- * cinco passos, avanco sequencial, cada transicao gravada em corrida_eventos.
+ * Lista de passos numerados com marcador de progresso.
+ * Serve tanto para o ciclo da corrida quanto para o protocolo 03 — sao dois
+ * fluxos diferentes de cinco passos, com a mesma forma visual.
  */
-export function Protocolo({ passoAtual, cancelada = false, concluida = false }: Props) {
+export function Protocolo({
+  titulo,
+  passos,
+  passoAtual,
+  concluido = false,
+  interrompido = false,
+  emergencia = false,
+}: Props) {
   return (
-    <View style={estilos.container}>
+    <View>
       <View style={estilos.cabecalho}>
-        <Text style={estilos.titulo}>Protocolo do servico</Text>
+        <Text style={estilos.titulo}>{titulo}</Text>
         <Text style={estilos.contador}>
-          Passo {Math.min(passoAtual, 5)} de {PROTOCOLO_5_PASSOS.length}
+          Passo {Math.min(passoAtual, passos.length)} de {passos.length}
         </Text>
       </View>
 
-      {PROTOCOLO_5_PASSOS.map((passo, indice) => {
-        const concluido = passo.numero < passoAtual || (concluida && passo.numero === passoAtual);
-        const atual = passo.numero === passoAtual && !cancelada && !concluida;
-        const ultimo = indice === PROTOCOLO_5_PASSOS.length - 1;
+      {passos.map((passo, indice) => {
+        const feito = passo.numero < passoAtual || (concluido && passo.numero === passoAtual);
+        const atual = passo.numero === passoAtual && !concluido && !interrompido;
+        const ultimo = indice === passos.length - 1;
 
         return (
-          <View key={passo.chave} style={estilos.linha}>
-            {/* Trilha: marcador + conector vertical */}
+          <View key={passo.numero} style={estilos.linha}>
             <View style={estilos.trilha}>
               <View
                 style={[
                   estilos.marcador,
-                  concluido && estilos.marcadorConcluido,
-                  atual && estilos.marcadorAtual,
+                  feito && estilos.marcadorFeito,
+                  atual && (emergencia ? estilos.marcadorEmergencia : estilos.marcadorAtual),
                 ]}
               >
-                <Text
-                  style={[
-                    estilos.marcadorTexto,
-                    (concluido || atual) && estilos.marcadorTextoAtivo,
-                  ]}
-                >
-                  {concluido ? '✓' : passo.numero}
+                <Text style={[estilos.marcadorTexto, (feito || atual) && estilos.marcadorTextoAtivo]}>
+                  {feito ? '✓' : passo.numero}
                 </Text>
               </View>
-
               {!ultimo ? (
-                <View style={[estilos.conector, concluido && estilos.conectorConcluido]} />
+                <View style={[estilos.conector, feito && estilos.conectorFeito]} />
               ) : null}
             </View>
 
@@ -69,14 +73,14 @@ export function Protocolo({ passoAtual, cancelada = false, concluida = false }: 
               accessible
               accessibilityLabel={
                 `Passo ${passo.numero}: ${passo.titulo}. ` +
-                (concluido ? 'Concluido.' : atual ? 'Em andamento.' : 'Aguardando.')
+                (feito ? 'Concluido.' : atual ? 'Em andamento.' : 'Aguardando.')
               }
             >
               <Text
                 style={[
                   estilos.passoTitulo,
-                  concluido && estilos.passoTituloConcluido,
-                  atual && estilos.passoTituloAtual,
+                  feito && estilos.passoTituloFeito,
+                  atual && (emergencia ? estilos.passoTituloEmergencia : estilos.passoTituloAtual),
                 ]}
               >
                 {passo.titulo}
@@ -84,8 +88,12 @@ export function Protocolo({ passoAtual, cancelada = false, concluida = false }: 
               <Text style={estilos.passoDescricao}>{passo.descricao}</Text>
 
               {atual ? (
-                <View style={estilos.etiquetaAtual}>
-                  <Text style={estilos.etiquetaAtualTexto}>EM ANDAMENTO</Text>
+                <View style={[estilos.etiqueta, emergencia && estilos.etiquetaEmergencia]}>
+                  <Text
+                    style={[estilos.etiquetaTexto, emergencia && estilos.etiquetaTextoEmergencia]}
+                  >
+                    EM ANDAMENTO
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -97,22 +105,18 @@ export function Protocolo({ passoAtual, cancelada = false, concluida = false }: 
 }
 
 const estilos = StyleSheet.create({
-  container: { gap: 0 },
   cabecalho: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.md,
+    gap: spacing.sm,
   },
-  titulo: {
-    fontSize: font.size.lg,
-    fontWeight: font.weight.bold,
-    color: colors.text,
-  },
+  titulo: { flex: 1, fontSize: font.size.lg, fontWeight: font.weight.bold, color: colors.text },
   contador: {
     fontSize: font.size.xs,
     fontWeight: font.weight.semibold,
-    color: palette.gold700,
+    color: colors.accentText,
     backgroundColor: colors.accentBg,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
@@ -131,32 +135,21 @@ const estilos = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  marcadorConcluido: { backgroundColor: colors.primary, borderColor: colors.primary },
+  marcadorFeito: { backgroundColor: colors.primary, borderColor: colors.primary },
   marcadorAtual: { backgroundColor: colors.secondary, borderColor: palette.gold400 },
-  marcadorTexto: {
-    fontSize: font.size.sm,
-    fontWeight: font.weight.bold,
-    color: colors.textFaint,
-  },
+  marcadorEmergencia: { backgroundColor: colors.danger, borderColor: colors.danger },
+  marcadorTexto: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.textFaint },
   marcadorTextoAtivo: { color: colors.textOnDark },
-  conector: {
-    flex: 1,
-    width: 2,
-    backgroundColor: colors.border,
-    marginVertical: 2,
-  },
-  conectorConcluido: { backgroundColor: colors.primary },
+  conector: { flex: 1, width: 2, backgroundColor: colors.border, marginVertical: 2 },
+  conectorFeito: { backgroundColor: colors.primary },
   conteudo: { flex: 1, paddingBottom: spacing.lg, gap: 2 },
   conteudoUltimo: { paddingBottom: 0 },
-  passoTitulo: {
-    fontSize: font.size.md,
-    fontWeight: font.weight.semibold,
-    color: colors.textFaint,
-  },
-  passoTituloConcluido: { color: colors.primary },
+  passoTitulo: { fontSize: font.size.md, fontWeight: font.weight.semibold, color: colors.textFaint },
+  passoTituloFeito: { color: colors.primary },
   passoTituloAtual: { color: colors.secondaryDark, fontWeight: font.weight.bold },
+  passoTituloEmergencia: { color: colors.danger, fontWeight: font.weight.bold },
   passoDescricao: { fontSize: font.size.xs, color: colors.textMuted, lineHeight: 17 },
-  etiquetaAtual: {
+  etiqueta: {
     alignSelf: 'flex-start',
     marginTop: spacing.xs,
     backgroundColor: colors.secondaryLight,
@@ -164,10 +157,12 @@ const estilos = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
   },
-  etiquetaAtualTexto: {
+  etiquetaEmergencia: { backgroundColor: colors.dangerBg },
+  etiquetaTexto: {
     fontSize: 10,
     fontWeight: font.weight.bold,
     color: colors.secondaryDark,
     letterSpacing: 0.5,
   },
+  etiquetaTextoEmergencia: { color: colors.danger },
 });

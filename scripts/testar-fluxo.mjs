@@ -1,22 +1,21 @@
 /**
  * Teste de fluxo do REDE27 contra o Supabase real, usando a MESMA chave anon
- * que o aplicativo usa. Nada de atalho por service_role: se passar aqui, passa
- * no app.
+ * que os aplicativos usam. Nada de atalho por service_role: se passar aqui,
+ * passa no app.
  *
- * Uso:
  *   node scripts/testar-fluxo.mjs
  *
- * Preparo (uma vez, no SQL Editor do Supabase) — o script avisa se faltar:
- *   1. autorizar a conta de operador na tabela `operadores`;
- *   2. creditar saldo na carteira do passageiro de teste.
+ * Cobre:
+ *   - cadastro por CPF criando passageiro OU motorista, conforme o papel;
+ *   - motorista sem as duas fotos NAO consegue aceitar corrida;
+ *   - carteira: o app nao escreve saldo e nao chama a funcao de credito;
+ *   - corrida com preco por km calculado no servidor;
+ *   - isolamento: passageiro nao ve nem mexe na corrida alheia;
+ *   - ciclo de 5 passos ate o debito, com rateio empresa/motorista;
+ *   - protocolo 03: passageiro aciona, so o Admin avanca e encerra, e o
+ *     motorista nao enxerga o alerta.
  *
- * O script cobre:
- *   - cadastro por CPF criando perfil e carteira automaticamente;
- *   - recusa de chamada sem saldo;
- *   - impossibilidade de o app escrever o proprio saldo;
- *   - isolamento entre passageiros (um nao ve nem mexe na corrida do outro);
- *   - protocolo de 5 passos ponta a ponta;
- *   - debito exato na carteira no passo 5 e registro no extrato.
+ * O script avisa o que falta preparar e imprime o SQL pronto.
  */
 import { createClient } from '@supabase/supabase-js';
 import fs from 'node:fs';
@@ -48,200 +47,429 @@ const ANON = env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 const DOMINIO = 'rede27.app'; // espelha CPF.dominioLogin
 const SENHA = 'rede27-teste-2026';
 
-// CPFs sinteticos, validos pelo algoritmo da Receita.
 const CONTAS = {
-  passageiro: { cpf: '52998224725', nome: 'Passageiro Teste' },
-  outro: { cpf: '11144477735', nome: 'Outro Passageiro' },
-  operador: { cpf: '12345678909', nome: 'Operador Teste' },
+  passageiro: { cpf: '52998224725', nome: 'Passageiro Teste', papel: 'passageiro' },
+  outro: { cpf: '11144477735', nome: 'Outro Passageiro', papel: 'passageiro' },
+  admin: { cpf: '12345678909', nome: 'Admin Teste', papel: 'passageiro' },
+  motorista: { cpf: '15350946056', nome: 'Motorista Teste', papel: 'motorista' },
+  motorista2: { cpf: '39053344705', nome: 'Motorista Dois', papel: 'motorista' },
 };
 
 const novoCliente = () => createClient(URL, ANON, { auth: { persistSession: false } });
 const emailDe = (cpf) => `${cpf}@${DOMINIO}`;
-const brl = (centavos) => `R$ ${(centavos / 100).toFixed(2).replace('.', ',')}`;
+const brl = (c) => `R$ ${(c / 100).toFixed(2).replace('.', ',')}`;
 
 let falhas = 0;
 function ok(nome, condicao, detalhe = '') {
-  console.log(`  ${condicao ? '\x1b[32mOK   \x1b[0m' : '\x1b[31mFALHA\x1b[0m'} ${nome}${detalhe ? ' — ' + detalhe : ''}`);
+  console.log(
+    `  ${condicao ? '\x1b[32mOK   \x1b[0m' : '\x1b[31mFALHA\x1b[0m'} ${nome}${detalhe ? ' — ' + detalhe : ''}`,
+  );
   if (!condicao) falhas++;
 }
-function secao(titulo) {
-  console.log(`\n\x1b[1m${titulo}\x1b[0m`);
-}
+const secao = (t) => console.log(`\n\x1b[1m${t}\x1b[0m`);
 
-async function conta({ cpf, nome }) {
+async function conta({ cpf, nome, papel }) {
   const c = novoCliente();
   const email = emailDe(cpf);
 
   let { data, error } = await c.auth.signInWithPassword({ email, password: SENHA });
-  if (!error) return { c, uid: data.session.user.id, novo: false };
+  if (!error) return { c, uid: data.session.user.id };
 
   ({ data, error } = await c.auth.signUp({
     email,
     password: SENHA,
-    options: { data: { cpf, nome, telefone: '27999990000' } },
+    options: { data: { cpf, nome, telefone: '27999990000', papel } },
   }));
 
   if (error) {
     if (/is invalid/i.test(error.message)) {
-      console.error(`\nO Supabase recusou o dominio "${DOMINIO}".`);
-      console.error('Troque CPF.dominioLogin em src/config/rede27.config.ts por um dominio que resolva no DNS.');
+      console.error(`\nO Supabase recusou o dominio "${DOMINIO}". Troque CPF.dominioLogin.`);
     } else if (/rate limit/i.test(error.message)) {
-      console.error('\nLimite de envio de e-mail atingido.');
-      console.error('Desligue "Confirm email" em Authentication -> Sign In / Providers -> Email.');
+      console.error('\nDesligue "Confirm email" em Authentication -> Sign In / Providers -> Email.');
     }
     throw new Error(`cadastro ${cpf}: ${error.message}`);
   }
 
   if (!data.session) {
-    console.error('\nCadastro criado mas sem sessao: a confirmacao de e-mail ainda esta ligada.');
-    console.error('Desligue "Confirm email" em Authentication -> Sign In / Providers -> Email.');
+    console.error('\nSem sessao apos o cadastro: a confirmacao de e-mail ainda esta ligada.');
     process.exit(1);
   }
 
-  return { c, uid: data.session.user.id, novo: true };
+  return { c, uid: data.session.user.id };
 }
 
 // ---------------------------------------------------------------------------
 
-secao('1. Cadastro por CPF');
+secao('1. Cadastro por papel');
 
 const A = await conta(CONTAS.passageiro);
 const B = await conta(CONTAS.outro);
-const OP = await conta(CONTAS.operador);
-ok('tres contas com sessao ativa', Boolean(A.uid && B.uid && OP.uid));
+const ADM = await conta(CONTAS.admin);
+const MOT = await conta(CONTAS.motorista);
+const MOT2 = await conta(CONTAS.motorista2);
+ok('cinco contas com sessao', Boolean(A.uid && B.uid && ADM.uid && MOT.uid && MOT2.uid));
 
-const { data: perfil } = await A.c.from('passageiros').select('*').eq('id', A.uid).maybeSingle();
-ok('gatilho criou o perfil com o CPF gravado', perfil?.cpf === CONTAS.passageiro.cpf, `cpf=${perfil?.cpf}`);
+const perfilA = await A.c.from('passageiros').select('*').eq('id', A.uid).maybeSingle();
+ok('passageiro criado com CPF', perfilA.data?.cpf === CONTAS.passageiro.cpf, `cpf=${perfilA.data?.cpf}`);
 
-const { data: carteira } = await A.c.from('carteiras').select('*').eq('passageiro_id', A.uid).maybeSingle();
-ok('gatilho criou a carteira', Boolean(carteira), carteira ? `saldo ${brl(carteira.saldo_centavos)}` : 'sem carteira');
+const perfilM = await MOT.c.from('motoristas').select('*').eq('id', MOT.uid).maybeSingle();
+ok('motorista criado na tabela certa', Boolean(perfilM.data), perfilM.error?.message ?? '');
+
+const motoristaSemCarteira = await MOT.c
+  .from('passageiros')
+  .select('id')
+  .eq('id', MOT.uid)
+  .maybeSingle();
+ok('motorista NAO virou passageiro', !motoristaSemCarteira.data, 'papeis separados');
+
+const carteiraR = await A.c.from('carteiras').select('*').eq('passageiro_id', A.uid).maybeSingle();
+ok('carteira criada para o passageiro', Boolean(carteiraR.data));
+const carteira = carteiraR.data;
 
 secao('2. Carteira nao e escrita pelo aplicativo');
 
-const escrita = await A.c.from('carteiras').update({ saldo_centavos: 999999 }).eq('id', carteira.id).select();
-ok('app nao altera o proprio saldo', (escrita.data?.length ?? 0) === 0,
-  escrita.error ? escrita.error.message : `${escrita.data?.length} linha(s) afetada(s)`);
+const escrita = await A.c
+  .from('carteiras')
+  .update({ saldo_centavos: 999999 })
+  .eq('id', carteira.id)
+  .select();
+ok(
+  'app nao altera o proprio saldo',
+  (escrita.data?.length ?? 0) === 0,
+  escrita.error ? escrita.error.message : `${escrita.data?.length} linha(s)`,
+);
 
-const credito = await A.c.rpc('creditar_carteira', { p_passageiro_id: A.uid, p_valor_centavos: 100000 });
+const credito = await A.c.rpc('creditar_carteira', {
+  p_passageiro_id: A.uid,
+  p_valor_centavos: 100000,
+});
 ok('app nao executa creditar_carteira', Boolean(credito.error), credito.error?.message ?? 'passou!');
 
-secao('3. Pre-requisitos do teste');
+secao('3. Fotos obrigatorias do motorista');
 
+const semFoto = await MOT.c
+  .from('motoristas')
+  .update({ foto_perfil_url: null, foto_veiculo_url: null })
+  .eq('id', MOT.uid)
+  .select()
+  .maybeSingle();
+ok('motorista pode limpar as proprias fotos', !semFoto.error, semFoto.error?.message ?? '');
+ok('banco marca cadastro incompleto', semFoto.data?.cadastro_completo === false);
+
+secao('4. Pre-requisitos');
+
+const catsR = await A.c.from('categorias').select('*').order('ordem');
+ok('categorias publicadas', (catsR.data?.length ?? 0) >= 3, catsR.data?.map((c) => c.nome).join(', '));
+
+const comAr = catsR.data.find((c) => c.chave === 'com_ar');
+const ehAdmin = await ADM.c.from('administradores').select('id').eq('id', ADM.uid).maybeSingle();
 const saldo = carteira.saldo_centavos;
-const { data: cats } = await A.c.from('categorias').select('*').order('ordem');
-ok('as 3 categorias estao publicadas', cats?.length === 3, cats?.map((c) => c.nome).join(', '));
 
-const comAr = cats.find((c) => c.chave === 'com_ar');
-const custo = comAr.tarifa_base_centavos + Math.round(comAr.preco_km_centavos * 3);
-
-const { data: souOperador } = await OP.c.from('operadores').select('id').eq('id', OP.uid).maybeSingle();
-
-if (!souOperador || saldo < custo) {
+if (!ehAdmin.data || saldo < 5000) {
   console.log('\n\x1b[33mFalta preparo. Rode no SQL Editor do Supabase:\x1b[0m\n');
-  if (!souOperador) {
-    console.log(`insert into public.operadores (id, nome)\nvalues ('${OP.uid}', 'Operador Teste')\non conflict (id) do update set ativo = true;\n`);
+  if (!ehAdmin.data) {
+    console.log(
+      `insert into public.administradores (id, nome)\nvalues ('${ADM.uid}', 'Admin Teste')\non conflict (id) do update set ativo = true;\n`,
+    );
   }
-  if (saldo < custo) {
+  if (saldo < 5000) {
     console.log(`select public.creditar_carteira('${A.uid}'::uuid, 50000, 'Credito de teste');\n`);
   }
   console.log('Depois rode este script de novo.');
   process.exit(1);
 }
 
-ok('conta de operador autorizada', true);
-ok('passageiro com saldo suficiente', saldo >= custo, `${brl(saldo)} para uma corrida de ${brl(custo)}`);
+ok('conta de administrador autorizada', true);
+ok('passageiro com saldo', saldo >= 5000, brl(saldo));
 
-secao('4. Abertura da chamada');
+secao('5. Corrida com preco por km');
 
-// Limpa corrida aberta de uma execucao anterior.
-const { data: pendente } = await A.c.from('corridas').select('id').eq('passageiro_id', A.uid).eq('status', 'aberta').maybeSingle();
-if (pendente) await A.c.rpc('cancelar_corrida', { p_corrida_id: pendente.id });
+const pendente = await A.c
+  .from('corridas')
+  .select('id')
+  .eq('passageiro_id', A.uid)
+  .eq('status', 'aberta')
+  .maybeSingle();
+if (pendente.data) await A.c.rpc('cancelar_corrida', { p_corrida_id: pendente.data.id });
+
+// Dois pontos em Feira de Santana, ~2,5 km em linha reta.
+const ORIGEM = { lat: -12.2664, lng: -38.9663 };
+const DESTINO = { lat: -12.25, lng: -38.95 };
 
 const criada = await A.c.rpc('criar_corrida', {
   p_categoria_chave: 'com_ar',
-  p_destino_texto: 'Rua das Flores, 120 - Centro',
-  p_origem_texto: 'Av. Principal, 50',
-  p_distancia_km: 3,
+  p_destino_texto: 'Av. Getulio Vargas, 27 - Centro',
+  p_origem_texto: 'Minha localizacao',
+  p_origem_lat: ORIGEM.lat,
+  p_origem_lng: ORIGEM.lng,
+  p_destino_lat: DESTINO.lat,
+  p_destino_lng: DESTINO.lng,
+  p_cidade_id: null,
 });
 ok('chamada criada', !criada.error, criada.error?.message ?? '');
-if (criada.error) { console.log('\n' + falhas + ' falha(s)'); process.exit(1); }
-
-const corrida = Array.isArray(criada.data) ? criada.data[0] : criada.data;
-ok('comeca no passo 1', corrida.passo_atual === 1, `passo ${corrida.passo_atual}`);
-ok('preco calculado no servidor', corrida.valor_estimado_centavos === custo,
-  `${brl(corrida.valor_estimado_centavos)} (esperado ${brl(custo)})`);
-
-const duplicada = await A.c.rpc('criar_corrida', { p_categoria_chave: 'sem_ar', p_destino_texto: 'Outro lugar' });
-ok('nao permite duas chamadas abertas', /em andamento/i.test(duplicada.error?.message ?? ''),
-  duplicada.error?.message ?? 'permitiu!');
-
-secao('5. Isolamento entre passageiros');
-
-// Atencao: "0 linhas" tambem acontece quando a consulta falha. Exigimos que a
-// leitura funcione E devolva vazio, senao um erro de permissao passa por
-// isolamento — foi assim que um bug de RLS quase escapou.
-const espiada = await B.c.from('corridas').select('*').eq('id', corrida.id);
-ok('outro passageiro nao ve a corrida', !espiada.error && (espiada.data?.length ?? 0) === 0,
-  espiada.error ? 'consulta falhou: ' + espiada.error.message : `${espiada.data?.length} linha(s)`);
-
-const invasao = await B.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
-ok('outro passageiro nao avanca a corrida alheia', Boolean(invasao.error), invasao.error?.message ?? 'AVANCOU!');
-
-const cancelaAlheia = await B.c.rpc('cancelar_corrida', { p_corrida_id: corrida.id });
-ok('outro passageiro nao cancela a corrida alheia', Boolean(cancelaAlheia.error), cancelaAlheia.error?.message ?? 'CANCELOU!');
-
-const proprioAvanco = await A.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
-ok('nem o dono avanca o proprio protocolo', Boolean(proprioAvanco.error), proprioAvanco.error?.message ?? 'AVANCOU!');
-
-secao('6. Protocolo de 5 passos pelo painel do operador');
-
-const fila = await OP.c.from('corridas').select('*').eq('status', 'aberta');
-ok('operador ve a chamada na fila', !fila.error && (fila.data?.length ?? 0) >= 1,
-  fila.error ? 'consulta falhou: ' + fila.error.message : `${fila.data?.length} na fila`);
-
-const passos = ['motorista_aceitou', 'embarque_confirmado', 'em_deslocamento', 'servico_concluido'];
-for (let i = 0; i < passos.length; i++) {
-  const r = await OP.c.rpc('avancar_protocolo', {
-    p_corrida_id: corrida.id,
-    p_chave: passos[i],
-    p_motorista_nome: 'Motorista Teste',
-  });
-  const linha = Array.isArray(r.data) ? r.data[0] : r.data;
-  ok(`passo ${i + 2} — ${passos[i]}`, !r.error && linha?.passo_atual === i + 2,
-    r.error?.message ?? `passo ${linha?.passo_atual}`);
+if (criada.error) {
+  console.log(`\n${falhas} falha(s)`);
+  process.exit(1);
 }
 
-secao('7. Encerramento e debito');
+const corrida = Array.isArray(criada.data) ? criada.data[0] : criada.data;
+ok('comeca no passo 1 e sem motorista', corrida.passo_atual === 1 && !corrida.motorista_id);
+ok(
+  'distancia calculada a partir das coordenadas',
+  Number(corrida.distancia_km) > 2 && Number(corrida.distancia_km) < 6,
+  `${corrida.distancia_km} km`,
+);
+
+const esperado =
+  comAr.tarifa_base_centavos + Math.round(comAr.preco_km_centavos * Number(corrida.distancia_km));
+ok(
+  'preco = base + km, calculado no servidor',
+  corrida.valor_estimado_centavos === esperado,
+  `${brl(corrida.valor_estimado_centavos)} (esperado ${brl(esperado)})`,
+);
+ok('taxa da empresa gravada na corrida', Number(corrida.taxa_empresa_percentual) > 0, `${corrida.taxa_empresa_percentual}%`);
+
+secao('6. Motorista sem fotos nao aceita');
+
+const aceiteSemFoto = await MOT.c.rpc('aceitar_corrida', { p_corrida_id: corrida.id });
+ok(
+  'aceite bloqueado por cadastro incompleto',
+  /Complete o cadastro/i.test(aceiteSemFoto.error?.message ?? ''),
+  aceiteSemFoto.error?.message ?? 'ACEITOU!',
+);
+
+// Preenche as fotos com URLs sinteticas: o teste valida a regra, nao o upload.
+await MOT.c
+  .from('motoristas')
+  .update({
+    foto_perfil_url: 'https://exemplo.invalido/perfil.jpg',
+    foto_veiculo_url: 'https://exemplo.invalido/veiculo.jpg',
+    veiculo_descricao: 'Fiat Uno branco',
+    veiculo_placa: 'ABC1D23',
+  })
+  .eq('id', MOT.uid);
+
+const completo = await MOT.c.from('motoristas').select('*').eq('id', MOT.uid).maybeSingle();
+ok('cadastro fica completo com as duas fotos', completo.data?.cadastro_completo === true);
+
+secao('7. Isolamento');
+
+const espiada = await B.c.from('corridas').select('*').eq('id', corrida.id);
+ok(
+  'outro passageiro nao ve a corrida',
+  !espiada.error && (espiada.data?.length ?? 0) === 0,
+  espiada.error ? 'consulta falhou: ' + espiada.error.message : `${espiada.data?.length} linha(s)`,
+);
+
+const invasao = await B.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
+ok('outro passageiro nao avanca corrida alheia', Boolean(invasao.error), invasao.error?.message ?? 'AVANCOU!');
+
+const donoAvanca = await A.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
+ok('nem o dono avanca a propria corrida', Boolean(donoAvanca.error), donoAvanca.error?.message ?? 'AVANCOU!');
+
+secao('8. Ciclo de 5 passos pelo motorista');
+
+const aceite = await MOT.c.rpc('aceitar_corrida', { p_corrida_id: corrida.id });
+const aceita = Array.isArray(aceite.data) ? aceite.data[0] : aceite.data;
+ok('motorista aceita e vai ao passo 2', !aceite.error && aceita?.passo_atual === 2, aceite.error?.message ?? '');
+
+// O segundo motorista precisa estar apto: se ele fosse barrado por cadastro
+// incompleto ou por nao ser motorista, o teste passaria pelo motivo errado e
+// nao provaria nada sobre corrida ja aceita.
+await MOT2.c
+  .from('motoristas')
+  .update({
+    foto_perfil_url: 'https://exemplo.invalido/perfil2.jpg',
+    foto_veiculo_url: 'https://exemplo.invalido/veiculo2.jpg',
+  })
+  .eq('id', MOT2.uid);
+
+const apto2 = await MOT2.c.from('motoristas').select('cadastro_completo').eq('id', MOT2.uid).maybeSingle();
+ok('segundo motorista esta apto a aceitar', apto2.data?.cadastro_completo === true);
+
+const roubo = await MOT2.c.rpc('aceitar_corrida', { p_corrida_id: corrida.id });
+ok(
+  'outro motorista nao rouba corrida ja aceita',
+  /ja aceitou|nao esta mais aguardando/i.test(roubo.error?.message ?? ''),
+  roubo.error?.message ?? 'ROUBOU!',
+);
+
+const avancoAlheio = await MOT2.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
+ok(
+  'outro motorista nao avanca corrida alheia',
+  /Sem permissao/i.test(avancoAlheio.error?.message ?? ''),
+  avancoAlheio.error?.message ?? 'AVANCOU!',
+);
+
+for (const [i, chave] of ['embarque_confirmado', 'em_deslocamento', 'servico_concluido'].entries()) {
+  const r = await MOT.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id, p_chave: chave });
+  const linha = Array.isArray(r.data) ? r.data[0] : r.data;
+  ok(`passo ${i + 3} — ${chave}`, !r.error && linha?.passo_atual === i + 3, r.error?.message ?? '');
+}
+
+secao('9. Debito e repasse');
 
 const finalR = await A.c.from('corridas').select('*').eq('id', corrida.id).maybeSingle();
-const final = finalR.data;
+const fim = finalR.data;
 ok('passageiro le a propria corrida', !finalR.error, finalR.error?.message ?? '');
-ok('corrida marcada como concluida', final?.status === 'concluida', `status=${final?.status}`);
-ok('valor final gravado', final?.valor_final_centavos === custo, brl(final?.valor_final_centavos ?? 0));
+ok('corrida concluida', fim?.status === 'concluida', `status=${fim?.status}`);
 
-const { data: carteiraFinal } = await A.c.from('carteiras').select('*').eq('passageiro_id', A.uid).maybeSingle();
-ok('saldo debitado exatamente uma vez', carteiraFinal.saldo_centavos === saldo - custo,
-  `${brl(saldo)} - ${brl(custo)} = ${brl(carteiraFinal.saldo_centavos)}`);
+const carteiraFim = await A.c.from('carteiras').select('*').eq('passageiro_id', A.uid).maybeSingle();
+ok(
+  'saldo debitado uma unica vez',
+  carteiraFim.data.saldo_centavos === saldo - corrida.valor_estimado_centavos,
+  `${brl(saldo)} - ${brl(corrida.valor_estimado_centavos)} = ${brl(carteiraFim.data.saldo_centavos)}`,
+);
 
-const { data: extrato } = await A.c.from('transacoes').select('*').eq('corrida_id', corrida.id);
-ok('debito registrado no extrato', extrato?.length === 1 && extrato[0].tipo === 'debito',
-  extrato?.map((t) => `${t.tipo} ${brl(t.valor_centavos)}`).join(', ') ?? 'nenhum');
+const empresa = fim?.valor_empresa_centavos ?? 0;
+const domotorista = fim?.valor_motorista_centavos ?? 0;
+ok(
+  'rateio fecha com o valor da corrida',
+  empresa + domotorista === fim?.valor_final_centavos,
+  `REDE27 ${brl(empresa)} + motorista ${brl(domotorista)} = ${brl(fim?.valor_final_centavos ?? 0)}`,
+);
+ok(
+  'percentual da empresa respeitado',
+  Math.abs(empresa - Math.round((fim.valor_final_centavos * Number(fim.taxa_empresa_percentual)) / 100)) <= 1,
+  `${fim?.taxa_empresa_percentual}%`,
+);
 
-const reavanco = await OP.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
-ok('corrida encerrada nao avanca de novo (sem debito duplo)', Boolean(reavanco.error),
-  reavanco.error?.message ?? 'AVANCOU!');
+const reavanco = await MOT.c.rpc('avancar_protocolo', { p_corrida_id: corrida.id });
+ok('corrida encerrada nao avanca de novo', Boolean(reavanco.error), reavanco.error?.message ?? 'AVANCOU!');
 
-const eventosR = await A.c.from('corrida_eventos').select('*').eq('corrida_id', corrida.id).order('passo');
-ok('os 5 passos ficaram registrados', !eventosR.error && eventosR.data?.length === 5,
-  eventosR.error ? 'consulta falhou: ' + eventosR.error.message : `${eventosR.data?.length} eventos`);
+secao('10. Protocolo 03');
 
-secao('8. Nova chamada apos encerrar');
+const acionamento = await A.c.rpc('acionar_03', {
+  p_corrida_id: corrida.id,
+  p_latitude: ORIGEM.lat,
+  p_longitude: ORIGEM.lng,
+  p_precisao_m: 12.5,
+});
+const alerta = Array.isArray(acionamento.data) ? acionamento.data[0] : acionamento.data;
+ok('passageiro aciona o 03', !acionamento.error && Boolean(alerta?.id), acionamento.error?.message ?? '');
+ok('com GPS o alerta nasce no passo 2', alerta?.passo_atual === 2, `passo ${alerta?.passo_atual}`);
 
-const novaChamada = await A.c.rpc('criar_corrida', { p_categoria_chave: 'sem_ar', p_destino_texto: 'Teste pos-corrida' });
-ok('passageiro pode chamar de novo', !novaChamada.error, novaChamada.error?.message ?? '');
-if (!novaChamada.error) {
-  const nova = Array.isArray(novaChamada.data) ? novaChamada.data[0] : novaChamada.data;
-  await A.c.rpc('cancelar_corrida', { p_corrida_id: nova.id });
+const repetido = await A.c.rpc('acionar_03', {
+  p_corrida_id: corrida.id,
+  p_latitude: ORIGEM.lat,
+  p_longitude: ORIGEM.lng,
+});
+const mesmo = Array.isArray(repetido.data) ? repetido.data[0] : repetido.data;
+ok('segurar de novo nao duplica o alerta', mesmo?.id === alerta?.id);
+
+const motoristaEspia = await MOT.c.from('alertas_03').select('*').eq('id', alerta.id);
+ok(
+  'motorista NAO enxerga o alerta (silencioso)',
+  !motoristaEspia.error && (motoristaEspia.data?.length ?? 0) === 0,
+  motoristaEspia.error ? motoristaEspia.error.message : `${motoristaEspia.data?.length} linha(s)`,
+);
+
+const passageiroEncerra = await A.c.rpc('encerrar_03', { p_alerta_id: alerta.id });
+ok('passageiro nao encerra o proprio alerta', Boolean(passageiroEncerra.error), passageiroEncerra.error?.message ?? 'ENCERROU!');
+
+const adminVe = await ADM.c.from('alertas_03').select('*').eq('status', 'ativo');
+ok('admin ve o alerta ativo', !adminVe.error && (adminVe.data?.length ?? 0) >= 1, adminVe.error?.message ?? '');
+
+// O passo 4 e ligar para quem pediu socorro. Sem nome e telefone na tela, o
+// alerta nao serve — e essa leitura depende de policy propria para o Admin.
+const contatoP = await ADM.c.from('passageiros').select('nome, telefone').eq('id', A.uid).maybeSingle();
+ok(
+  'admin le nome e telefone do passageiro',
+  !contatoP.error && Boolean(contatoP.data?.telefone),
+  contatoP.error ? contatoP.error.message : `${contatoP.data?.nome} / ${contatoP.data?.telefone}`,
+);
+
+const contatoM = await ADM.c.from('motoristas').select('nome, telefone').eq('id', MOT.uid).maybeSingle();
+ok(
+  'admin le nome e telefone do motorista',
+  !contatoM.error && Boolean(contatoM.data?.telefone),
+  contatoM.error ? contatoM.error.message : `${contatoM.data?.nome} / ${contatoM.data?.telefone}`,
+);
+
+const passageiroEspiaOutro = await A.c.from('passageiros').select('*').eq('id', B.uid);
+ok(
+  'passageiro comum NAO le dados de outro passageiro',
+  !passageiroEspiaOutro.error && (passageiroEspiaOutro.data?.length ?? 0) === 0,
+  passageiroEspiaOutro.error ? passageiroEspiaOutro.error.message : `${passageiroEspiaOutro.data?.length} linha(s)`,
+);
+
+const p3 = await ADM.c.rpc('registrar_passo_03', {
+  p_alerta_id: alerta.id,
+  p_passo: 3,
+  p_chave: 'alerta_exibido',
+});
+ok('admin registra o passo 3', !p3.error, p3.error?.message ?? '');
+
+const p4 = await ADM.c.rpc('registrar_passo_03', {
+  p_alerta_id: alerta.id,
+  p_passo: 4,
+  p_chave: 'contato_realizado',
+  p_detalhe: 'Ligacao para o passageiro',
+});
+const apos4 = Array.isArray(p4.data) ? p4.data[0] : p4.data;
+ok('admin registra o contato (passo 4)', !p4.error && apos4?.passo_atual === 4, p4.error?.message ?? '');
+
+const voltar = await ADM.c.rpc('registrar_passo_03', {
+  p_alerta_id: alerta.id,
+  p_passo: 3,
+  p_chave: 'alerta_exibido',
+});
+const aposVoltar = Array.isArray(voltar.data) ? voltar.data[0] : voltar.data;
+ok('o passo nunca anda para tras', aposVoltar?.passo_atual === 4, `passo ${aposVoltar?.passo_atual}`);
+
+const encerra = await ADM.c.rpc('encerrar_03', {
+  p_alerta_id: alerta.id,
+  p_observacao: 'Teste automatizado',
+});
+const encerrado = Array.isArray(encerra.data) ? encerra.data[0] : encerra.data;
+ok('admin encerra no passo 5', !encerra.error && encerrado?.status === 'encerrado' && encerrado?.passo_atual === 5, encerra.error?.message ?? '');
+
+const eventos = await ADM.c.from('alerta_03_eventos').select('*').eq('alerta_id', alerta.id);
+ok('historico do 03 registrado', (eventos.data?.length ?? 0) >= 4, `${eventos.data?.length} eventos`);
+
+secao('11. Admin edita precos e cidades');
+
+const precoAntes = comAr.tarifa_base_centavos;
+const mudaPreco = await ADM.c
+  .from('categorias')
+  .update({ tarifa_base_centavos: precoAntes + 100 })
+  .eq('chave', 'com_ar')
+  .select()
+  .maybeSingle();
+ok('admin edita preco', !mudaPreco.error && mudaPreco.data?.tarifa_base_centavos === precoAntes + 100, mudaPreco.error?.message ?? '');
+
+await ADM.c.from('categorias').update({ tarifa_base_centavos: precoAntes }).eq('chave', 'com_ar');
+
+const passageiroEdita = await A.c
+  .from('categorias')
+  .update({ tarifa_base_centavos: 1 })
+  .eq('chave', 'com_ar')
+  .select();
+ok(
+  'passageiro NAO edita preco',
+  (passageiroEdita.data?.length ?? 0) === 0,
+  passageiroEdita.error ? passageiroEdita.error.message : `${passageiroEdita.data?.length} linha(s)`,
+);
+
+const nomeCidade = `Cidade Teste ${Date.now().toString().slice(-5)}`;
+const novaCidade = await ADM.c.from('cidades').insert({ nome: nomeCidade, uf: 'BA' }).select().maybeSingle();
+ok('admin cadastra cidade (sem limite)', !novaCidade.error, novaCidade.error?.message ?? '');
+if (novaCidade.data) await ADM.c.from('cidades').delete().eq('id', novaCidade.data.id);
+
+const passageiroCidade = await A.c.from('cidades').insert({ nome: 'Invasao', uf: 'BA' }).select();
+ok('passageiro NAO cadastra cidade', Boolean(passageiroCidade.error) || (passageiroCidade.data?.length ?? 0) === 0);
+
+secao('12. Nova corrida apos encerrar');
+
+const nova = await A.c.rpc('criar_corrida', {
+  p_categoria_chave: 'sem_ar',
+  p_destino_texto: 'Teste pos-corrida',
+});
+ok('passageiro pode chamar de novo', !nova.error, nova.error?.message ?? '');
+if (!nova.error) {
+  const n = Array.isArray(nova.data) ? nova.data[0] : nova.data;
+  ok('sem coordenadas usa a distancia minima', Number(n.distancia_km) >= 1, `${n.distancia_km} km`);
+  await A.c.rpc('cancelar_corrida', { p_corrida_id: n.id });
 }
 
 console.log(

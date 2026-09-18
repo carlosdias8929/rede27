@@ -1,126 +1,95 @@
-# Pendencias do cliente — e o que foi assumido enquanto isso
+# Pendências e decisões — REDE27
 
-Nenhuma das cinco perguntas bloqueou o desenvolvimento. Cada uma foi construida
-com um padrao razoavel, isolado em `src/config/rede27.config.ts`. Quando a
-resposta chegar, muda-se **uma linha** e nada mais precisa ser refeito.
+Estado em 18/09/2026, após o fechamento da **Opção B (R$ 1.256,24)**.
 
 ---
 
-## 1. Trava de seguranca "03"
+## Respondido pelo cliente e implementado
 
-**Pergunta:** codigo digitado, segurar o botao por 3 segundos, ou outra coisa?
-
-**Situacao:** os **dois modos estao implementados e funcionando**. A escolha e
-uma linha:
-
-```ts
-// src/config/rede27.config.ts
-export const TRAVA_03 = {
-  modo: 'SEGURAR_3S' as Trava03Modo,   // ou 'CODIGO_03'
-```
-
-| Modo | Comportamento |
-| --- | --- |
-| `SEGURAR_3S` (ativo) | Segurar CHAMAR por 3s; um preenchimento verde avanca e a chamada so sai ao completar. Soltar antes cancela. |
-| `CODIGO_03` | Tocar em CHAMAR abre um campo; digitar `03` libera o botao de confirmar. |
-
-Se a resposta for uma terceira coisa, o unico arquivo a mexer e
-`src/components/BotaoChamar.tsx`.
-
-**Acessibilidade:**
-
-- No celular, com leitor de tela ativo, "segurar" nao e confiavel, entao o modo
-  `SEGURAR_3S` troca sozinho por confirmacao em dois toques.
-- Na web essa troca **nao** acontece, e de proposito: o react-native-web nao
-  consegue detectar leitor de tela e responde sempre "tem leitor ativo", o que
-  tirava a trava de 3 segundos de todo mundo que abrisse pelo navegador. Quem
-  navega por teclado continua atendido: segurar `Enter` ou `Espaco` no botao
-  conta como segurar o botao.
+| Ponto | Decisão do Alberto | Situação |
+| --- | --- | --- |
+| Trava 03 | Segurar o botão 03 por 3s → alerta com localização no Admin | Feito |
+| Som do 03 | Silencioso para o motorista, alarme só no Admin | Feito |
+| 5 passos | São os do protocolo 03, não os da corrida | Feito |
+| Quem recebe a chamada | Painel web do motorista | Feito |
+| Entrega | 1 APK + 2 painéis web | Feito |
+| Preços | Sem ar 7+2,50 / Com ar 10+3,00 / Bens 12+3,50 | Feito, editável no Admin |
+| Taxa | 25% empresa / 75% motorista | Feito, editável no Admin |
+| Fotos do motorista | Perfil e veículo obrigatórias, visíveis ao passageiro | Feito |
+| Cidades ilimitadas | Sem limite | Feito |
+| Cores | Azul `#0A1931` e dourado `#FFC700` | Feito |
+| Mapa | Gratuito provisório | Feito (OpenStreetMap + linha reta) |
+| Localização | No acionamento, sem segundo plano | Feito |
 
 ---
 
-## 2. Os 5 passos do protocolo
+## Ainda esperando o cliente
 
-**Pergunta:** quais sao exatamente os 5 passos?
+### 1. Logo
 
-**Situacao:** a **estrutura esta pronta** — cinco passos, avanco sequencial,
-cada transicao gravada em `corrida_eventos`, tela 3 atualizando em tempo real.
-Os **textos sao provisorios**:
+"Logo te mando em seguida." Até chegar, o app usa o selo **REDE 27** feito em
+código (`src/components/Logo.tsx`). Trocar por imagem é rápido.
 
-1. Chamada enviada
-2. Motorista aceitou
-3. Embarque confirmado
-4. Em deslocamento
-5. Servico concluido *(debita a carteira e encerra)*
+### 2. Domínio de login
 
-Trocar titulo e descricao em `PROTOCOLO_5_PASSOS` nao exige nenhuma outra
-alteracao. **Unica amarra tecnica:** o passo 5 e o que fecha o servico e debita.
-Se a ordem oficial puser o pagamento em outro ponto, avise — e um ajuste
-pequeno, mas e no banco (`avancar_protocolo`), nao so no texto.
+O Supabase recusa domínio que não resolve no DNS, então o login por CPF usa
+`rede27.app`, que **não é de vocês**. Se o DNS desse domínio mudar, cadastros
+novos param. Trocar é uma linha em `CPF.dominioLogin`.
 
----
+### 3. Verde e branco
 
-## 3. Quem recebe a chamada nesta fase
+Perguntamos se continuam como cor de apoio e não houve resposta. Hoje: branco
+como superfície, verde só como cor semântica de sucesso/crédito. É um arquivo.
 
-**Pergunta:** posso simular o motorista por um painel simples?
+### 4. Conta de faturamento do Google Maps
 
-**Situacao:** feito, em `/motorista`. Mostra a fila de chamadas abertas em tempo
-real e avanca o protocolo passo a passo. Nao entra nas 3 telas do passageiro.
-
-O painel exige uma conta autorizada na tabela `operadores`. Isso nao e
-burocracia: sem essa separacao, qualquer passageiro logado conseguiria avancar a
-corrida de outra pessoa ate o passo 5 e **disparar o debito na carteira alheia**.
+Sem ela, a distância continua aproximada (linha reta × fator de rota). Isso
+aparece na tela do passageiro como "distância estimada".
 
 ---
 
-## 4. Precos por categoria
+## Limites conhecidos desta fase
 
-**Pergunta:** quais os precos de com ar, sem ar e transporte de bens?
+**A distância é aproximada.** Linha reta multiplicada por 1,3 (ajustável no
+Admin), com mínimo de 1 km. Em trajetos com rio, viaduto ou contorno longo, a
+diferença para a rota real pode ser grande. O app avisa; o cliente aceitou.
 
-**Situacao:** valores de exemplo, e **editaveis sem republicar o aplicativo** —
-ficam na tabela `categorias` do Supabase, nao no codigo.
+**Geocodificação depende do Nominatim.** Serviço gratuito do OpenStreetMap, com
+limite de 1 consulta por segundo e sem garantia de disponibilidade. Se ele
+falhar, o app segue funcionando: a corrida sai pela distância mínima.
 
-| Categoria | Tarifa base | Por km | Exemplo (3 km) |
-| --- | --- | --- | --- |
-| Com ar | R$ 8,00 | R$ 2,40 | R$ 15,20 |
-| Sem ar | R$ 6,00 | R$ 1,90 | R$ 11,70 |
-| Transporte de Bens | R$ 7,00 | R$ 2,10 | R$ 13,30 |
+**Repasse ao motorista é calculado, não pago.** Cada corrida concluída grava
+quanto é da REDE27 e quanto é do motorista, e o Admin mostra os totais. O
+pagamento automático depende de pagamento integrado — fase 2.
 
-A distancia esta fixa em 3 km porque ainda nao ha calculo de rota por mapa —
-isso e proxima fase, junto com o mapa em si.
+**O 03 avisa a central, não a polícia.** Sem gravação de áudio e sem ligação
+automática para o 190, conforme combinado. Para operar com passageiros reais,
+mantenha o procedimento de emergência que vocês já usam em paralelo.
 
----
-
-## 5. Validacao de CPF e carteira
-
-**Pergunta:** CPF so no formato ou contra base externa? Carteira com saldo
-simples ou recarga por pagamento?
-
-**Situacao:**
-
-- **CPF: validacao algoritmica completa** — formato, 11 digitos e os dois
-  digitos verificadores da Receita Federal, alem de bloquear sequencias como
-  `111.111.111-11`. Roda no aparelho, antes de qualquer chamada de rede.
-  Consulta a base externa (Serpro/parceiro) exige contrato e chave de API do
-  cliente: proxima fase.
-- **Carteira: saldo simples**, creditado pela administracao via SQL. Recarga por
-  PIX/cartao e proxima fase — pede conta de recebimento e gateway.
+**Sem rastreamento em segundo plano.** A localização é lida quando o app está
+aberto e o passageiro aciona. Rastrear com o app fechado exige permissão
+adicional do Android e revisão da Play Store — fase 2.
 
 ---
 
-## Combinado no chat e ja incluso
+## Contas e papéis
 
-- **Voz no campo "Para onde vamos?"** — o campo e de texto livre e sem teclado
-  restrito, entao o microfone do proprio teclado (Gboard no Android, ditado no
-  iPhone) aparece normalmente. Sem permissao extra, sem tela extra, sem custo.
-  Na web, onde o navegador oferece reconhecimento nativo, o botao de microfone
-  dita direto no campo.
-- **Categoria "Transporte de Bens"** — no lugar de "Miudeza", como terceira
-  opcao ao lado de "Com ar" e "Sem ar", com preco proprio e o mesmo fluxo.
-  Campos de encomenda (destinatario, tamanho, foto) ficam para a proxima etapa,
-  conforme combinado.
+Três papéis, três tabelas, definidos no cadastro:
 
-## Fora do escopo desta fase
+- **passageiro** → `passageiros` + carteira
+- **motorista** → `motoristas` (cria a própria conta em `/motorista`)
+- **admin** → `administradores` (cadastro manual por SQL, ninguém se promove)
 
-Mapa e rota real, app proprio de motorista, recarga por pagamento, consulta de
-CPF em base externa, campos especificos de encomenda, publicacao na Play Store.
+O SQL para promover um admin está no [README](../README.md#criar-um-administrador).
+
+---
+
+## Armadilha para quem for mexer no banco
+
+Policies de SELECT chamam `eh_admin()` e `eh_motorista()`. A expressão de uma
+policy roda com os direitos de **quem consulta**, não do dono da tabela — então
+revogar `EXECUTE` dessas funções de `authenticated` derruba a leitura inteira
+com `permission denied for function ...`. Já aconteceu uma vez aqui.
+
+E `create or replace function` reconcede `EXECUTE` a `PUBLIC`: depois de
+recriar qualquer função, revogue de novo de `public` e `anon`.

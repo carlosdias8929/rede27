@@ -8,7 +8,7 @@ import { colors, font, spacing } from '../src/theme';
 
 /** Porta de entrada: decide entre a tela de login e a tela de chamada. */
 export default function Entrada() {
-  const { carregando, session } = useSessao();
+  const { carregando, session, papel } = useSessao();
 
   if (carregando) {
     return (
@@ -20,7 +20,14 @@ export default function Entrada() {
     );
   }
 
-  return <Redirect href={session ? '/inicio' : '/login'} />;
+  if (!session) return <Redirect href="/login" />;
+
+  // Cada papel tem a sua tela inicial: passageiro chama corrida, motorista
+  // recebe corrida, admin vigia os alertas.
+  if (papel === 'motorista') return <Redirect href="/motorista" />;
+  if (papel === 'admin') return <Redirect href="/admin" />;
+
+  return <Redirect href="/inicio" />;
 }
 
 const estilos = StyleSheet.create({

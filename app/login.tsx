@@ -1,4 +1,4 @@
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -27,7 +27,7 @@ type Modo = 'entrar' | 'cadastrar';
  * qualquer chamada de rede, entao erro de digitacao nao vira erro de servidor.
  */
 export default function Login() {
-  const { session, entrar, cadastrar } = useSessao();
+  const { session, papel, entrar, cadastrar } = useSessao();
   const insets = useSafeAreaInsets();
 
   const [modo, setModo] = useState<Modo>('entrar');
@@ -81,7 +81,11 @@ export default function Login() {
     }
   }, [cadastrar, cpf, entrar, modo, nome, senha, telefone]);
 
-  if (session) return <Redirect href="/inicio" />;
+  if (session) {
+    if (papel === 'motorista') return <Redirect href="/motorista" />;
+    if (papel === 'admin') return <Redirect href="/admin" />;
+    return <Redirect href="/inicio" />;
+  }
 
   return (
     <KeyboardAvoidingView
@@ -201,6 +205,16 @@ export default function Login() {
           </View>
         </View>
 
+        <View style={estilos.paineis}>
+          <Pressable onPress={() => router.push('/motorista')} accessibilityRole="button" hitSlop={8}>
+            <Text style={estilos.painelLink}>Sou motorista</Text>
+          </Pressable>
+          <Text style={estilos.painelSeparador}>·</Text>
+          <Pressable onPress={() => router.push('/admin')} accessibilityRole="button" hitSlop={8}>
+            <Text style={estilos.painelLink}>Painel Admin</Text>
+          </Pressable>
+        </View>
+
         <Text style={estilos.rodape}>
           REDE27 — transporte de passageiros, bens e encomendas.
         </Text>
@@ -254,6 +268,18 @@ const estilos = StyleSheet.create({
     color: colors.secondary,
     fontWeight: font.weight.semibold,
   },
+  paineis: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  painelLink: {
+    color: palette.gold300,
+    fontSize: font.size.sm,
+    fontWeight: font.weight.semibold,
+  },
+  painelSeparador: { color: palette.navy100 },
   rodape: {
     textAlign: 'center',
     fontSize: font.size.xs,

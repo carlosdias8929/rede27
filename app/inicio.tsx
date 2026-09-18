@@ -11,22 +11,20 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Botao03 } from '../src/components/Botao03';
 import { BotaoChamar } from '../src/components/BotaoChamar';
 import { CampoDestino } from '../src/components/CampoDestino';
 import { CartaoCarteira } from '../src/components/CartaoCarteira';
 import { Logo } from '../src/components/Logo';
 import { estimarCentavos, SeletorCategoria } from '../src/components/SeletorCategoria';
-import { CATEGORIAS } from '../src/config/rede27.config';
+import { CATEGORIAS, DISTANCIA, MARCA } from '../src/config/rede27.config';
 import { brl, paraReais } from '../src/lib/format';
+import { distanciaKm, localizacaoAtual, type Coordenada } from '../src/lib/geo';
 import { mensagemDeErro, supabase } from '../src/lib/supabase';
 import { useSessao } from '../src/state/sessao';
 import { colors, font, palette, radius, spacing } from '../src/theme';
-import type { CategoriaRow, CorridaRow } from '../src/types/database';
+import type { CategoriaRow, CidadeRow, CorridaRow } from '../src/types/database';
 
-/** Distancia usada na estimativa enquanto nao ha calculo de rota por mapa. */
-const DISTANCIA_PADRAO_KM = 3;
-
-/** Fallback offline: as categorias do config viram linhas equivalentes. */
 const CATEGORIAS_FALLBACK: CategoriaRow[] = CATEGORIAS.map((c, i) => ({
   chave: c.chave,
   nome: c.nome,
@@ -38,76 +36,128 @@ const CATEGORIAS_FALLBACK: CategoriaRow[] = CATEGORIAS.map((c, i) => ({
   atualizado_em: new Date().toISOString(),
 }));
 
-/**
- * TELA 2 — Chamada do servico.
- * Destino (com ditado por voz), categoria com preco proprio, saldo da carteira
- * e o botao CHAMAR protegido pela trava "03".
- */
+/** TELA 2 — chamar o servico. */
 export default function Inicio() {
-  const { session, passageiro, carteira, carregando, sair, recarregarCarteira } = useSessao();
+  const { session, papel, passageiro, carteira, carregando, sair, recarregarCarteira } =
+    useSessao();
   const insets = useSafeAreaInsets();
 
   const [categorias, setCategorias] = useState<CategoriaRow[]>(CATEGORIAS_FALLBACK);
+  const [cidades, setCidades] = useState<CidadeRow[]>([]);
+  const [cidadeId, setCidadeId] = useState<string | null>(null);
+  const [fatorRota, setFatorRota] = useState<number>(DISTANCIA.fatorRotaPadrao);
+  const [distanciaMinima, setDistanciaMinima] = useState<number>(DISTANCIA.minimaPadrao);
+
   const [selecionada, setSelecionada] = useState<string | null>(CATEGORIAS_FALLBACK[0].chave);
   const [destino, setDestino] = useState('');
-  const [origem, setOrigem] = useState('');
+  const [destinoCoord, setDestinoCoord] = useState<Coordenada | null>(null);
+  const [origemCoord, setOrigemCoord] = useState<Coordenada | null>(null);
+  const [buscandoGps, setBuscandoGps] = useState(false);
+
   const [erroDestino, setErroDestino] = useState<string | null>(null);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [chamando, setChamando] = useState(false);
+  const [acionando03, setAcionando03] = useState(false);
+  const [alerta03Ativo, setAlerta03Ativo] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
+
+  const cidadeSelecionada = useMemo(
+    () => cidades.find((c) => c.id === cidadeId) ?? null,
+    [cidades, cidadeId],
+  );
+
+  /** Distancia cobrada: linha reta corrigida, nunca abaixo do minimo. */
+  const km = useMemo(() => {
+    if (!origemCoord || !destinoCoord) return distanciaMinima;
+    const reta = distanciaKm(origemCoord, destinoCoord);
+    return Math.max(Number((reta * fatorRota).toFixed(2)), distanciaMinima);
+  }, [origemCoord, destinoCoord, fatorRota, distanciaMinima]);
 
   const categoriaAtual = useMemo(
     () => categorias.find((c) => c.chave === selecionada) ?? null,
     [categorias, selecionada],
   );
 
-  const estimativaCentavos = categoriaAtual
-    ? estimarCentavos(categoriaAtual, DISTANCIA_PADRAO_KM)
-    : 0;
+  const estimativa = categoriaAtual ? estimarCentavos(categoriaAtual, km) : 0;
+  const saldo = carteira?.saldo_centavos ?? 0;
+  const saldoInsuficiente = saldo < estimativa;
 
-  const saldoCentavos = carteira?.saldo_centavos ?? 0;
-  const saldoInsuficiente = saldoCentavos < estimativaCentavos;
+  const carregarBase = useCallback(async () => {
+    const [cats, cids, confs] = await Promise.all([
+      supabase.from('categorias').select('*').eq('ativo', true).order('ordem'),
+      supabase.from('cidades').select('*').eq('ativa', true).order('nome'),
+      supabase.from('configuracoes').select('*'),
+    ]);
 
-  /** Precos oficiais vem do banco, entao o cliente ajusta sem republicar o app. */
-  const carregarCategorias = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('categorias')
-      .select('*')
-      .eq('ativo', true)
-      .order('ordem', { ascending: true });
+    if (cats.data?.length) {
+      setCategorias(cats.data);
+      setSelecionada((atual) =>
+        atual && cats.data.some((c) => c.chave === atual) ? atual : cats.data[0].chave,
+      );
+    }
 
-    if (error || !data || data.length === 0) return;
+    if (cids.data?.length) {
+      setCidades(cids.data);
+      setCidadeId((atual) => atual ?? cids.data[0].id);
+    }
 
-    setCategorias(data);
-    setSelecionada((atual) =>
-      atual && data.some((c) => c.chave === atual) ? atual : data[0].chave,
-    );
+    for (const c of confs.data ?? []) {
+      const n = Number(c.valor);
+      if (!Number.isFinite(n)) continue;
+      if (c.chave === 'fator_rota') setFatorRota(n);
+      if (c.chave === 'distancia_minima_km') setDistanciaMinima(n);
+    }
   }, []);
 
-  /** Se ja existe uma chamada aberta, a tela 3 assume. */
-  const verificarCorridaAberta = useCallback(async () => {
+  const verificarPendencias = useCallback(async () => {
     if (!session) return;
 
-    const { data } = await supabase
-      .from('corridas')
-      .select('id')
-      .eq('passageiro_id', session.user.id)
-      .eq('status', 'aberta')
-      .maybeSingle();
+    const [corrida, alerta] = await Promise.all([
+      supabase
+        .from('corridas')
+        .select('id')
+        .eq('passageiro_id', session.user.id)
+        .eq('status', 'aberta')
+        .maybeSingle(),
+      supabase
+        .from('alertas_03')
+        .select('id')
+        .eq('passageiro_id', session.user.id)
+        .eq('status', 'ativo')
+        .maybeSingle(),
+    ]);
 
-    if (data?.id) router.replace({ pathname: '/corrida', params: { id: data.id } });
+    setAlerta03Ativo(Boolean(alerta.data));
+    if (corrida.data?.id) {
+      router.replace({ pathname: '/corrida', params: { id: corrida.data.id } });
+    }
   }, [session]);
 
   useEffect(() => {
-    carregarCategorias();
-    verificarCorridaAberta();
-  }, [carregarCategorias, verificarCorridaAberta]);
+    carregarBase();
+    verificarPendencias();
+  }, [carregarBase, verificarPendencias]);
+
+  const usarMinhaLocalizacao = useCallback(async () => {
+    setBuscandoGps(true);
+    setAviso(null);
+
+    const r = await localizacaoAtual();
+    setBuscandoGps(false);
+
+    if (!r.ok) {
+      setAviso(r.mensagem);
+      return;
+    }
+    setOrigemCoord(r.coordenada);
+  }, []);
 
   const atualizar = useCallback(async () => {
     setAtualizando(true);
-    await Promise.all([carregarCategorias(), recarregarCarteira(), verificarCorridaAberta()]);
+    await Promise.all([carregarBase(), recarregarCarteira(), verificarPendencias()]);
     setAtualizando(false);
-  }, [carregarCategorias, recarregarCarteira, verificarCorridaAberta]);
+  }, [carregarBase, recarregarCarteira, verificarPendencias]);
 
   const chamar = useCallback(async () => {
     setErroGeral(null);
@@ -124,12 +174,16 @@ export default function Inicio() {
 
     setChamando(true);
     try {
-      // O preco e a checagem de saldo sao refeitos no servidor.
+      // O servidor recalcula distancia, preco e saldo. O que vale e o de la.
       const { data, error } = await supabase.rpc('criar_corrida', {
         p_categoria_chave: categoriaAtual.chave,
         p_destino_texto: destino.trim(),
-        p_origem_texto: origem.trim(),
-        p_distancia_km: DISTANCIA_PADRAO_KM,
+        p_origem_texto: origemCoord ? 'Minha localizacao' : '',
+        p_origem_lat: origemCoord?.latitude ?? null,
+        p_origem_lng: origemCoord?.longitude ?? null,
+        p_destino_lat: destinoCoord?.latitude ?? null,
+        p_destino_lng: destinoCoord?.longitude ?? null,
+        p_cidade_id: cidadeId,
       });
 
       if (error) throw error;
@@ -144,7 +198,34 @@ export default function Inicio() {
     } finally {
       setChamando(false);
     }
-  }, [categoriaAtual, destino, origem, recarregarCarteira]);
+  }, [categoriaAtual, destino, destinoCoord, origemCoord, cidadeId, recarregarCarteira]);
+
+  const acionar03 = useCallback(async () => {
+    setAcionando03(true);
+    setErroGeral(null);
+
+    // Tenta o GPS, mas nao deixa a falta dele impedir o pedido de socorro.
+    const local = await localizacaoAtual();
+
+    try {
+      const { error } = await supabase.rpc('acionar_03', {
+        p_corrida_id: null,
+        p_latitude: local.ok ? local.coordenada.latitude : null,
+        p_longitude: local.ok ? local.coordenada.longitude : null,
+        p_precisao_m: local.ok ? (local.coordenada.precisao ?? null) : null,
+      });
+      if (error) throw error;
+
+      setAlerta03Ativo(true);
+      if (!local.ok) {
+        setAviso('Alerta enviado, mas sem localizacao: ' + local.mensagem);
+      }
+    } catch (erro) {
+      setErroGeral(mensagemDeErro(erro));
+    } finally {
+      setAcionando03(false);
+    }
+  }, []);
 
   if (carregando) {
     return (
@@ -155,12 +236,13 @@ export default function Inicio() {
   }
 
   if (!session) return <Redirect href="/login" />;
+  if (papel === 'motorista') return <Redirect href="/motorista" />;
+  if (papel === 'admin') return <Redirect href="/admin" />;
 
   const primeiroNome = (passageiro?.nome || '').trim().split(' ')[0];
 
   return (
     <View style={estilos.raiz}>
-      {/* Cabecalho */}
       <View style={[estilos.cabecalho, { paddingTop: insets.top + spacing.md }]}>
         <View style={estilos.cabecalhoLinha}>
           <Logo sobreEscuro />
@@ -169,9 +251,8 @@ export default function Inicio() {
             accessibilityRole="button"
             accessibilityLabel="Sair da conta"
             hitSlop={10}
-            style={estilos.sair}
           >
-            <Text style={estilos.sairTexto}>Sair</Text>
+            <Text style={estilos.sair}>Sair</Text>
           </Pressable>
         </View>
         <Text style={estilos.saudacao}>
@@ -186,17 +267,60 @@ export default function Inicio() {
           <RefreshControl refreshing={atualizando} onRefresh={atualizar} tintColor={colors.primary} />
         }
       >
-        <CartaoCarteira
-          saldoCentavos={saldoCentavos}
-          onVerExtrato={() => router.push('/carteira')}
-        />
+        <CartaoCarteira saldoCentavos={saldo} onVerExtrato={() => router.push('/carteira')} />
+
+        {cidades.length > 1 ? (
+          <View style={estilos.grupo}>
+            <Text style={estilos.rotulo}>Cidade</Text>
+            <View style={estilos.cidades}>
+              {cidades.map((c) => (
+                <Pressable
+                  key={c.id}
+                  onPress={() => setCidadeId(c.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: c.id === cidadeId }}
+                  style={[estilos.cidade, c.id === cidadeId && estilos.cidadeAtiva]}
+                >
+                  <Text
+                    style={[estilos.cidadeTexto, c.id === cidadeId && estilos.cidadeTextoAtivo]}
+                  >
+                    {c.nome}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        <View style={estilos.grupo}>
+          <View style={estilos.origemLinha}>
+            <Text style={estilos.rotulo}>Partida</Text>
+            <Pressable onPress={usarMinhaLocalizacao} accessibilityRole="button" hitSlop={8}>
+              <Text style={estilos.link}>
+                {buscandoGps ? 'Obtendo...' : origemCoord ? 'Atualizar' : 'Usar minha localizacao'}
+              </Text>
+            </Pressable>
+          </View>
+          <Text style={estilos.origemTexto}>
+            {origemCoord
+              ? `Localizacao obtida${origemCoord.precisao ? ` (precisao ~${Math.round(origemCoord.precisao)} m)` : ''}`
+              : 'Sem localizacao. Sera cobrada a distancia minima.'}
+          </Text>
+        </View>
 
         <CampoDestino
           valor={destino}
           onChange={(t) => {
             setDestino(t);
+            setDestinoCoord(null);
             setErroDestino(null);
           }}
+          onSelecionarSugestao={(s) => {
+            setDestino(s.rotulo);
+            setDestinoCoord({ latitude: s.latitude, longitude: s.longitude });
+          }}
+          cidade={cidadeSelecionada?.nome}
+          uf={cidadeSelecionada?.uf ?? MARCA.ufPadrao}
           erro={erroDestino}
         />
 
@@ -204,19 +328,24 @@ export default function Inicio() {
           categorias={categorias}
           selecionada={selecionada}
           onSelecionar={setSelecionada}
-          distanciaKm={DISTANCIA_PADRAO_KM}
+          distanciaKm={km}
         />
 
-        {/* Resumo do valor */}
         <View style={estilos.resumo}>
-          <View>
+          <View style={estilos.resumoInfo}>
             <Text style={estilos.resumoRotulo}>Valor estimado</Text>
             <Text style={estilos.resumoObs}>
-              Base {DISTANCIA_PADRAO_KM} km — debitado da carteira ao concluir.
+              {km.toFixed(2).replace('.', ',')} km — {DISTANCIA.aviso}
             </Text>
           </View>
-          <Text style={estilos.resumoValor}>{brl(paraReais(estimativaCentavos))}</Text>
+          <Text style={estilos.resumoValor}>{brl(paraReais(estimativa))}</Text>
         </View>
+
+        {aviso ? (
+          <View style={estilos.avisoCaixa} accessibilityLiveRegion="polite">
+            <Text style={estilos.avisoTexto}>{aviso}</Text>
+          </View>
+        ) : null}
 
         {erroGeral ? (
           <View style={estilos.alerta} accessibilityLiveRegion="polite">
@@ -225,15 +354,19 @@ export default function Inicio() {
         ) : null}
 
         <BotaoChamar
-          onConfirmar={chamar}
+          onChamar={chamar}
           carregando={chamando}
           desabilitado={saldoInsuficiente || !destino.trim()}
           motivoBloqueio={
             saldoInsuficiente
-              ? `Saldo insuficiente. Esta chamada custa ${brl(paraReais(estimativaCentavos))}.`
+              ? `Saldo insuficiente. Esta chamada custa ${brl(paraReais(estimativa))}.`
               : null
           }
         />
+
+        <View style={estilos.separador} />
+
+        <Botao03 onAcionar={acionar03} enviando={acionando03} ativo={alerta03Ativo} />
       </ScrollView>
     </View>
   );
@@ -241,7 +374,12 @@ export default function Inicio() {
 
 const estilos = StyleSheet.create({
   raiz: { flex: 1, backgroundColor: colors.bg },
-  carregando: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
+  carregando: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
   cabecalho: {
     backgroundColor: colors.primaryDark,
     paddingHorizontal: spacing.lg,
@@ -255,17 +393,8 @@ const estilos = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sair: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
-  sairTexto: {
-    color: palette.gold300,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.semibold,
-  },
-  saudacao: {
-    color: colors.textOnDark,
-    fontSize: font.size.md,
-    fontWeight: font.weight.medium,
-  },
+  sair: { color: palette.gold300, fontSize: font.size.sm, fontWeight: font.weight.semibold },
+  saudacao: { color: colors.textOnDark, fontSize: font.size.md, fontWeight: font.weight.medium },
   conteudo: {
     padding: spacing.lg,
     gap: spacing.xl,
@@ -273,6 +402,23 @@ const estilos = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
   },
+  grupo: { gap: spacing.xs },
+  rotulo: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.textMuted },
+  link: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.secondary },
+  origemLinha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  origemTexto: { fontSize: font.size.xs, color: colors.textFaint },
+  cidades: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  cidade: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  cidadeAtiva: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
+  cidadeTexto: { fontSize: font.size.sm, color: colors.textMuted },
+  cidadeTextoAtivo: { color: colors.primaryDark, fontWeight: font.weight.semibold },
   resumo: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -284,17 +430,18 @@ const estilos = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.md,
   },
-  resumoRotulo: {
-    fontSize: font.size.sm,
-    fontWeight: font.weight.semibold,
-    color: colors.textMuted,
+  resumoInfo: { flex: 1, gap: 2 },
+  resumoRotulo: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.textMuted },
+  resumoObs: { fontSize: font.size.xs, color: colors.textFaint },
+  resumoValor: { fontSize: font.size.xxl, fontWeight: font.weight.heavy, color: colors.primaryDark },
+  avisoCaixa: {
+    backgroundColor: colors.accentBg,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.accent,
+    borderRadius: radius.sm,
+    padding: spacing.md,
   },
-  resumoObs: { fontSize: font.size.xs, color: colors.textFaint, maxWidth: 220 },
-  resumoValor: {
-    fontSize: font.size.xxl,
-    fontWeight: font.weight.heavy,
-    color: colors.primaryDark,
-  },
+  avisoTexto: { fontSize: font.size.sm, color: colors.text },
   alerta: {
     backgroundColor: colors.dangerBg,
     borderLeftWidth: 4,
@@ -303,4 +450,5 @@ const estilos = StyleSheet.create({
     padding: spacing.md,
   },
   alertaTexto: { fontSize: font.size.sm, color: colors.danger, fontWeight: font.weight.medium },
+  separador: { height: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
 });

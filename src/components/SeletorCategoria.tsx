@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ICONE_CATEGORIA } from '../config/rede27.config';
 import { brl, paraReais } from '../lib/format';
 import { colors, font, palette, radius, shadow, spacing } from '../theme';
 import type { CategoriaRow } from '../types/database';
@@ -18,11 +19,7 @@ export function estimarCentavos(categoria: CategoriaRow, distanciaKm: number): n
   return categoria.tarifa_base_centavos + Math.round(categoria.preco_km_centavos * distanciaKm);
 }
 
-const ICONES: Record<string, string> = {
-  com_ar: '❄️',
-  sem_ar: '🚗',
-  transporte_bens: '📦',
-};
+// Os icones ficam no config, junto do resto da identidade das categorias.
 
 export function SeletorCategoria({
   categorias,
@@ -52,7 +49,7 @@ export function SeletorCategoria({
               pressed && estilos.cartaoPressionado,
             ]}
           >
-            <Text style={estilos.icone}>{ICONES[categoria.chave] ?? '🚗'}</Text>
+            <Text style={estilos.icone}>{ICONE_CATEGORIA[categoria.chave] ?? '🚗'}</Text>
 
             <View style={estilos.info}>
               <Text style={[estilos.nome, ativa && estilos.nomeAtivo]}>{categoria.nome}</Text>
