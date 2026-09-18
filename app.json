@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "REDE27",
+    "slug": "rede27",
+    "scheme": "rede27",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#07361F"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rede27.app"
+    },
+    "android": {
+      "package": "com.rede27.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#07361F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "REDE27",
+      "themeColor": "#07361F",
+      "backgroundColor": "#FFFFFF"
+    },
+    "plugins": ["expo-router"],
+    "extra": {
+      "eas": {}
+    }
+  }
+}
