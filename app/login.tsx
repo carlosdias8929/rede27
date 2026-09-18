@@ -257,6 +257,6 @@ const estilos = StyleSheet.create({
   rodape: {
     textAlign: 'center',
     fontSize: font.size.xs,
-    color: palette.green100,
+    color: palette.navy100,
   },
 });

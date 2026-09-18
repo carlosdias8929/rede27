@@ -65,7 +65,7 @@ const estilos = StyleSheet.create({
   rotuloBloco: { gap: 2 },
   rotulo: {
     fontSize: font.size.xs,
-    color: palette.green100,
+    color: palette.navy100,
     fontWeight: font.weight.medium,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
@@ -86,7 +86,7 @@ const estilos = StyleSheet.create({
   seloTexto: {
     fontSize: font.size.md,
     fontWeight: font.weight.heavy,
-    color: palette.green900,
+    color: palette.navy900,
   },
   aviso: { fontSize: font.size.xs, color: palette.gold300 },
   link: {

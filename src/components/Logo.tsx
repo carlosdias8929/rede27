@@ -5,7 +5,7 @@ import { colors, font, palette, radius, spacing } from '../theme';
 
 type Props = {
   tamanho?: 'md' | 'lg';
-  /** Em fundo escuro o "REDE" fica branco; em fundo claro, verde. */
+  /** Em fundo escuro o "REDE" fica branco; em fundo claro, azul escuro. */
   sobreEscuro?: boolean;
   mostrarSlogan?: boolean;
 };
@@ -13,7 +13,7 @@ type Props = {
 export function Logo({ tamanho = 'md', sobreEscuro = false, mostrarSlogan = false }: Props) {
   const grande = tamanho === 'lg';
   const corRede = sobreEscuro ? colors.textOnDark : colors.primaryDark;
-  const corSlogan = sobreEscuro ? palette.green100 : colors.textMuted;
+  const corSlogan = sobreEscuro ? palette.navy100 : colors.textMuted;
 
   return (
     <View style={estilos.container} accessibilityRole="header">
@@ -59,7 +59,7 @@ const estilos = StyleSheet.create({
   numero: {
     fontSize: font.size.xl,
     fontWeight: font.weight.heavy,
-    color: palette.green900,
+    color: palette.navy900,
     letterSpacing: 1,
   },
   numeroGrande: { fontSize: font.size.xxl },
