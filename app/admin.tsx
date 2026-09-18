@@ -18,7 +18,7 @@ import { Botao } from '../src/components/Botao';
 import { Campo } from '../src/components/Campo';
 import { Logo } from '../src/components/Logo';
 import { Protocolo } from '../src/components/Protocolo';
-import { PROTOCOLO_03 } from '../src/config/rede27.config';
+import { MARCA, PROTOCOLO_03, TAXA } from '../src/config/rede27.config';
 import { useAoVivo } from '../src/lib/aoVivo';
 import { iniciarAlarme, liberarAudio, pararAlarme, precisaDeGesto } from '../src/lib/alarme';
 import { formatarCPF } from '../src/lib/cpf';
@@ -59,7 +59,7 @@ export default function PainelAdmin() {
         <Text style={estilos.negadoTitulo}>Acesso restrito</Text>
         <Text style={estilos.negadoTexto}>
           Esta conta nao esta autorizada no painel Admin. O cadastro e feito pela administracao da
-          REDE27, na tabela `administradores`.
+          {MARCA.empresa}, na tabela `administradores`.
         </Text>
         <Botao titulo="Sair" variante="contorno" onPress={sair} />
       </View>
@@ -529,7 +529,7 @@ function AbaCorridas() {
       <View style={estilos.totais}>
         <Total rotulo="Concluidas" valor={String(totais.quantidade)} />
         <Total rotulo="Faturamento" valor={brl(paraReais(totais.bruto))} />
-        <Total rotulo="REDE27" valor={brl(paraReais(totais.empresa))} destaque />
+        <Total rotulo={MARCA.empresa} valor={brl(paraReais(totais.empresa))} destaque />
         <Total rotulo="Motoristas" valor={brl(paraReais(totais.motorista))} />
       </View>
 
@@ -557,7 +557,7 @@ function AbaCorridas() {
             </Text>
             {c.status === 'concluida' ? (
               <Text style={estilos.repasse}>
-                REDE27 {brl(paraReais(c.valor_empresa_centavos ?? 0))} ({c.taxa_empresa_percentual}%)
+                {MARCA.empresa} {brl(paraReais(c.valor_empresa_centavos ?? 0))} ({c.taxa_empresa_percentual}%)
                 · Motorista {brl(paraReais(c.valor_motorista_centavos ?? 0))}
               </Text>
             ) : null}
@@ -771,8 +771,16 @@ function AbaPrecos() {
       }
 
       const taxaNum = Number(taxa.replace(',', '.'));
-      if (!Number.isFinite(taxaNum) || taxaNum < 0 || taxaNum > 100) {
-        throw new Error('A taxa da empresa precisa ficar entre 0 e 100.');
+
+      // O banco tambem recusa, mas avisar aqui evita uma ida ao servidor so
+      // para receber "nao pode ficar abaixo de 25%".
+      if (!Number.isFinite(taxaNum) || taxaNum > 100) {
+        throw new Error('A taxa da empresa precisa ser um numero ate 100.');
+      }
+      if (taxaNum < TAXA.minimaPercentual) {
+        throw new Error(
+          `A taxa da ${MARCA.empresa} nao pode ficar abaixo de ${TAXA.minimaPercentual}%.`,
+        );
       }
 
       for (const [chave, valor] of [
@@ -829,11 +837,16 @@ function AbaPrecos() {
 
       <View style={[estilos.linhaCartao, shadow(1)]}>
         <Campo
-          rotulo="Taxa da REDE27 (%)"
+          rotulo={`Taxa da ${MARCA.empresa} (%)`}
           value={taxa}
           onChangeText={setTaxa}
           keyboardType="decimal-pad"
-          ajuda={`Com ${taxa || '0'}%, o motorista fica com ${100 - (Number(taxa.replace(',', '.')) || 0)}%.`}
+          erro={
+            Number(taxa.replace(',', '.')) < TAXA.minimaPercentual
+              ? `Minimo de ${TAXA.minimaPercentual}%. Abaixo disso o sistema nao grava.`
+              : null
+          }
+          ajuda={`Com ${taxa || '0'}%, o motorista fica com ${100 - (Number(taxa.replace(',', '.')) || 0)}%. Minimo fixo: ${TAXA.minimaPercentual}%.`}
         />
         <Campo
           rotulo="Fator de rota"
@@ -857,8 +870,9 @@ function AbaPrecos() {
 
       <Botao titulo="Salvar alteracoes" onPress={salvar} carregando={salvando} />
       <Text style={estilos.nota}>
-        Corridas ja concluidas guardam a taxa que valia na hora: mudar o percentual aqui nao
-        reescreve o passado.
+        A taxa da {MARCA.empresa} tem piso fixo de {TAXA.minimaPercentual}%, travado no banco de
+        dados: nenhuma tela e nenhum atalho conseguem gravar abaixo disso. Corridas ja concluidas
+        guardam a taxa que valia na hora — mudar o percentual aqui nao reescreve o passado.
       </Text>
     </View>
   );

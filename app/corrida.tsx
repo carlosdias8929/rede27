@@ -7,7 +7,7 @@ import { Botao } from '../src/components/Botao';
 import { Botao03 } from '../src/components/Botao03';
 import { Logo } from '../src/components/Logo';
 import { Protocolo } from '../src/components/Protocolo';
-import { CICLO_CORRIDA } from '../src/config/rede27.config';
+import { CICLO_CORRIDA, MARCA, SAUDACOES } from '../src/config/rede27.config';
 import { brl, paraReais } from '../src/lib/format';
 import { useAoVivo } from '../src/lib/aoVivo';
 import { localizacaoAtual } from '../src/lib/geo';
@@ -225,6 +225,23 @@ export default function Corrida() {
           </View>
         ) : null}
 
+        {/* Frases pedidas pelo cliente, no momento em que fazem sentido. */}
+        {emAndamento && corrida.passo_atual === 3 ? (
+          <View style={estilos.saudacao} accessibilityLiveRegion="polite">
+            <Text style={estilos.saudacaoTexto}>{SAUDACOES.chegouNoLocal}</Text>
+            <Text style={estilos.saudacaoApoio}>
+              O motorista chegou ao ponto de partida. Confira a placa antes de entrar.
+            </Text>
+          </View>
+        ) : null}
+
+        {concluida ? (
+          <View style={estilos.saudacao} accessibilityLiveRegion="polite">
+            <Text style={estilos.saudacaoTexto}>{SAUDACOES.chegouNoEndereco}</Text>
+            <Text style={estilos.saudacaoApoio}>{SAUDACOES.obrigado}.</Text>
+          </View>
+        ) : null}
+
         <View style={[estilos.cartao, shadow(2)]}>
           <Protocolo
             titulo="Andamento do servico"
@@ -239,7 +256,7 @@ export default function Corrida() {
           <View style={estilos.sucesso}>
             <Text style={estilos.sucessoTitulo}>Servico concluido</Text>
             <Text style={estilos.sucessoTexto}>
-              {brl(valor)} foi debitado da sua carteira REDE27.
+              {brl(valor)} foi debitado da sua carteira {MARCA.nomeApp}.
             </Text>
           </View>
         ) : null}
@@ -385,6 +402,22 @@ const estilos = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  saudacao: {
+    backgroundColor: colors.accentBg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: palette.gold300,
+    padding: spacing.lg,
+    gap: spacing.xs,
+    alignItems: 'center',
+  },
+  saudacaoTexto: {
+    fontSize: font.size.xl,
+    fontWeight: font.weight.heavy,
+    color: colors.primaryDark,
+    textAlign: 'center',
+  },
+  saudacaoApoio: { fontSize: font.size.sm, color: colors.textMuted, textAlign: 'center' },
   sucesso: {
     backgroundColor: colors.successBg,
     borderRadius: radius.md,

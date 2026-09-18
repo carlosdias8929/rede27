@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { CARTEIRA } from '../config/rede27.config';
+import { CARTEIRA, MARCA } from '../config/rede27.config';
 import { brl, paraReais } from '../lib/format';
 import { colors, font, palette, radius, shadow, spacing } from '../theme';
 
@@ -19,7 +19,7 @@ export function CartaoCarteira({ saldoCentavos, onVerExtrato, carregando }: Prop
     <View style={[estilos.cartao, shadow(2)]}>
       <View style={estilos.topo}>
         <View style={estilos.rotuloBloco}>
-          <Text style={estilos.rotulo}>Carteira REDE27</Text>
+          <Text style={estilos.rotulo}>Carteira {MARCA.nomeApp}</Text>
           <Text style={estilos.saldo} accessibilityLabel={`Saldo de ${brl(paraReais(saldo))}`}>
             {carregando ? '—' : brl(paraReais(saldo))}
           </Text>
@@ -33,7 +33,7 @@ export function CartaoCarteira({ saldoCentavos, onVerExtrato, carregando }: Prop
       {zerado && !carregando ? (
         <Text style={estilos.aviso}>
           {CARTEIRA.modo === 'saldo_simples'
-            ? 'Sem saldo. A recarga e feita pela administracao da REDE27 nesta fase.'
+            ? `Sem saldo. A recarga e feita pela central da ${MARCA.empresa} nesta fase.`
             : 'Sem saldo. Faca uma recarga para chamar.'}
         </Text>
       ) : null}

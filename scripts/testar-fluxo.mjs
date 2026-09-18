@@ -459,7 +459,45 @@ if (novaCidade.data) await ADM.c.from('cidades').delete().eq('id', novaCidade.da
 const passageiroCidade = await A.c.from('cidades').insert({ nome: 'Invasao', uf: 'BA' }).select();
 ok('passageiro NAO cadastra cidade', Boolean(passageiroCidade.error) || (passageiroCidade.data?.length ?? 0) === 0);
 
-secao('12. Admin lanca credito na carteira');
+secao('12. Piso de 25% na taxa da empresa');
+
+const taxaOriginal = (await ADM.c.from('configuracoes').select('valor').eq('chave','taxa_empresa_percentual').maybeSingle()).data?.valor;
+
+for (const abaixo of ['10', '24.9', '0']) {
+  const r = await ADM.c.from('configuracoes').update({ valor: abaixo }).eq('chave','taxa_empresa_percentual').select();
+  ok(
+    `admin NAO grava taxa de ${abaixo}%`,
+    Boolean(r.error) || (r.data?.length ?? 0) === 0,
+    r.error?.message ?? 'GRAVOU!',
+  );
+}
+
+const acima = await ADM.c.from('configuracoes').update({ valor: '30' }).eq('chave','taxa_empresa_percentual').select();
+ok('admin grava taxa acima do piso', !acima.error && (acima.data?.length ?? 0) === 1, acima.error?.message ?? '');
+
+// A corrida criada agora tem de carregar a taxa vigente, nunca abaixo do piso.
+const pend2 = await A.c.from('corridas').select('id').eq('passageiro_id', A.uid).eq('status','aberta').maybeSingle();
+if (pend2.data) await A.c.rpc('cancelar_corrida', { p_corrida_id: pend2.data.id });
+
+const comTaxa = await A.c.rpc('criar_corrida', { p_categoria_chave: 'sem_ar', p_destino_texto: 'Teste de taxa' });
+const linhaTaxa = Array.isArray(comTaxa.data) ? comTaxa.data[0] : comTaxa.data;
+ok(
+  'corrida grava a taxa vigente e nunca abaixo de 25%',
+  Number(linhaTaxa?.taxa_empresa_percentual) >= 25,
+  `${linhaTaxa?.taxa_empresa_percentual}%`,
+);
+if (linhaTaxa) await A.c.rpc('cancelar_corrida', { p_corrida_id: linhaTaxa.id });
+
+await ADM.c.from('configuracoes').update({ valor: taxaOriginal ?? '25' }).eq('chave','taxa_empresa_percentual');
+
+const passageiroMexeTaxa = await A.c.from('configuracoes').update({ valor: '5' }).eq('chave','taxa_empresa_percentual').select();
+ok(
+  'passageiro NAO mexe na taxa',
+  (passageiroMexeTaxa.data?.length ?? 0) === 0,
+  passageiroMexeTaxa.error ? passageiroMexeTaxa.error.message : `${passageiroMexeTaxa.data?.length} linha(s)`,
+);
+
+secao('13. Admin lanca credito na carteira');
 
 const antesCredito = await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle();
 const lancamento = await ADM.c.rpc('admin_creditar_carteira', {
@@ -494,7 +532,7 @@ const motoristaCredita = await MOT.c.rpc('admin_creditar_carteira', {
 });
 ok('motorista NAO credita passageiro', Boolean(motoristaCredita.error), motoristaCredita.error?.message ?? 'CREDITOU!');
 
-secao('13. Nova corrida apos encerrar');
+secao('14. Nova corrida apos encerrar');
 
 const nova = await A.c.rpc('criar_corrida', {
   p_categoria_chave: 'sem_ar',

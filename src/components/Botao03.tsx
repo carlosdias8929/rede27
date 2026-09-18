@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { AccessibilityInfo, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { PROTOCOLO_03 } from '../config/rede27.config';
+import { MARCA, PROTOCOLO_03 } from '../config/rede27.config';
 import { colors, font, palette, radius, shadow, spacing } from '../theme';
 import { useSegurar } from './segurar';
 
@@ -63,7 +63,7 @@ export function Botao03({ onAcionar, enviando = false, ativo = false }: Props) {
       <View style={[estilos.ativo, shadow(2)]} accessibilityLiveRegion="assertive">
         <Text style={estilos.ativoTitulo}>PROTOCOLO 03 ACIONADO</Text>
         <Text style={estilos.ativoTexto}>
-          A central da REDE27 foi avisada e recebeu a sua localizacao. Se houver risco
+          A central da {MARCA.empresa} foi avisada e recebeu a sua localizacao. Se houver risco
           imediato, ligue tambem para 190.
         </Text>
       </View>
@@ -138,7 +138,11 @@ function Conteudo({ enviando }: { enviando: boolean }) {
 }
 
 function Rodape() {
-  return <Text style={estilos.rodape}>O 03 avisa a central da REDE27. Nao substitui o 190.</Text>;
+  return (
+    <Text style={estilos.rodape}>
+      O 03 avisa a central da {MARCA.empresa}. Nao substitui o 190.
+    </Text>
+  );
 }
 
 const estilos = StyleSheet.create({

@@ -143,7 +143,7 @@ export async function buscarEndereco(
     const resposta = await fetch(url, {
       headers: {
         // Exigido pela politica de uso do Nominatim.
-        'User-Agent': `${MARCA.nome}/1.0 (app de transporte)`,
+        'User-Agent': `${MARCA.nomeApp.replace(/\s+/g, '')}/1.0 (app de transporte)`,
         Accept: 'application/json',
       },
     });

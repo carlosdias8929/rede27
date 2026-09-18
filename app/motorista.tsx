@@ -7,7 +7,7 @@ import { Botao } from '../src/components/Botao';
 import { Campo } from '../src/components/Campo';
 import { FotoUpload } from '../src/components/FotoUpload';
 import { Logo } from '../src/components/Logo';
-import { CICLO_CORRIDA, ICONE_CATEGORIA } from '../src/config/rede27.config';
+import { CICLO_CORRIDA, ICONE_CATEGORIA, MARCA } from '../src/config/rede27.config';
 import { useAoVivo } from '../src/lib/aoVivo';
 import { formatarCPF } from '../src/lib/cpf';
 import { brl, dataHoraCurta, paraReais } from '../src/lib/format';
@@ -47,7 +47,7 @@ export default function PainelMotorista() {
         <Logo />
         <Text style={estilos.negadoTitulo}>Esta conta nao e de motorista</Text>
         <Text style={estilos.negadoTexto}>
-          Entre com uma conta de motorista ou peca a administracao da REDE27 para cadastrar a sua.
+          Entre com uma conta de motorista ou peca a central da {MARCA.empresa} para cadastrar a sua.
         </Text>
         <Botao titulo="Sair" variante="contorno" onPress={sair} />
       </View>
@@ -498,7 +498,7 @@ function Operacao({ onAbrirPerfil }: { onAbrirPerfil: () => void }) {
             </Text>
             <Text style={estilos.meta}>
               Corrida de {brl(paraReais(ultimaConcluida.valor_final_centavos ?? 0))} ·{' '}
-              taxa REDE27 {ultimaConcluida.taxa_empresa_percentual}% ·{' '}
+              taxa {MARCA.empresa} {ultimaConcluida.taxa_empresa_percentual}% ·{' '}
               {dataHoraCurta(ultimaConcluida.atualizada_em)}
             </Text>
           </View>

@@ -84,7 +84,7 @@ export const PROTOCOLO_03 = {
    * Gravacao de audio e ligacao automatica para a policia: fase 2, conforme
    * combinado. Este MVP avisa a central; nao substitui o 190.
    */
-  avisoLegal: 'O 03 avisa a central da REDE27. Nao substitui o 190.',
+  avisoLegal: 'O 03 avisa a central da empresa. Nao substitui o 190.',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -234,11 +234,53 @@ export const CARTEIRA = {
 
 // ---------------------------------------------------------------------------
 // MARCA
+//
+// O cliente separa as duas coisas na propria mensagem: "App REDE 27 - REDE
+// BRASIL", "painel da REDE BRASIL", "25% fixo pra REDE BRASIL". Entao:
+//
+//   nomeApp -> o aplicativo, que o passageiro ve na logo
+//   empresa -> a empresa, que aparece nas saudacoes, no painel e na taxa
+//
+// Se ele confirmar que e um nome so, basta igualar os dois aqui. Nenhum texto
+// de tela repete essas palavras: todos leem daqui.
 // ---------------------------------------------------------------------------
 export const MARCA = {
-  nome: 'REDE27',
+  nomeApp: 'REDE 27',
+  empresa: 'REDE BRASIL',
   slogan: 'Transporte de passageiros, bens e encomendas',
   moeda: 'BRL',
   locale: 'pt-BR',
   ufPadrao: 'BA',
+} as const;
+
+// ---------------------------------------------------------------------------
+// SAUDACOES
+//
+// Frases pedidas pelo cliente, ao pe da letra. Ficam aqui para ele poder mudar
+// o texto sem mexer em tela nenhuma.
+// ---------------------------------------------------------------------------
+export const SAUDACOES = {
+  /** Tela inicial do passageiro. */
+  bemVindo: `Bem-vindo a ${MARCA.empresa}`,
+
+  /** Passo 3: o motorista chegou ao ponto de partida. */
+  chegouNoLocal: 'Voce chegou no local',
+
+  /** Passo 5: chegada ao destino. */
+  chegouNoEndereco: 'Voce chegou no endereco',
+
+  /** Fim da corrida. */
+  obrigado: `Obrigado por usar a ${MARCA.empresa}`,
+} as const;
+
+// ---------------------------------------------------------------------------
+// TAXA DA EMPRESA
+// ---------------------------------------------------------------------------
+export const TAXA = {
+  /**
+   * Piso exigido pelo cliente: "Nao pode ser menos que 25% de jeito nenhum".
+   * O valor corrente continua editavel no painel Admin, mas o banco recusa
+   * qualquer numero abaixo deste piso — a trava nao depende da tela.
+   */
+  minimaPercentual: 25,
 } as const;

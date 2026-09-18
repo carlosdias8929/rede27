@@ -17,7 +17,7 @@ import { CampoDestino } from '../src/components/CampoDestino';
 import { CartaoCarteira } from '../src/components/CartaoCarteira';
 import { Logo } from '../src/components/Logo';
 import { estimarCentavos, SeletorCategoria } from '../src/components/SeletorCategoria';
-import { CATEGORIAS, DISTANCIA, MARCA } from '../src/config/rede27.config';
+import { CATEGORIAS, DISTANCIA, MARCA, SAUDACOES } from '../src/config/rede27.config';
 import { brl, paraReais } from '../src/lib/format';
 import { distanciaKm, localizacaoAtual, type Coordenada } from '../src/lib/geo';
 import { mensagemDeErro, supabase } from '../src/lib/supabase';
@@ -255,6 +255,7 @@ export default function Inicio() {
             <Text style={estilos.sair}>Sair</Text>
           </Pressable>
         </View>
+        <Text style={estilos.bemVindo}>{SAUDACOES.bemVindo}</Text>
         <Text style={estilos.saudacao}>
           {primeiroNome ? `Ola, ${primeiroNome}!` : 'Ola!'} Para onde vamos hoje?
         </Text>
@@ -394,6 +395,13 @@ const estilos = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sair: { color: palette.gold300, fontSize: font.size.sm, fontWeight: font.weight.semibold },
+  bemVindo: {
+    color: palette.gold300,
+    fontSize: font.size.sm,
+    fontWeight: font.weight.bold,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
   saudacao: { color: colors.textOnDark, fontSize: font.size.md, fontWeight: font.weight.medium },
   conteudo: {
     padding: spacing.lg,

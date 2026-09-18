@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Botao } from '../src/components/Botao';
 import { CartaoCarteira } from '../src/components/CartaoCarteira';
-import { CARTEIRA } from '../src/config/rede27.config';
+import { CARTEIRA, MARCA } from '../src/config/rede27.config';
 import { brl, dataHoraCurta, paraReais } from '../src/lib/format';
 import { supabase } from '../src/lib/supabase';
 import { useSessao } from '../src/state/sessao';
@@ -82,7 +82,7 @@ export default function Carteira() {
               <Text style={estilos.vazioTitulo}>Nenhuma movimentacao ainda</Text>
               <Text style={estilos.vazioTexto}>
                 {CARTEIRA.modo === 'saldo_simples'
-                  ? 'Os creditos sao lancados pela administracao da REDE27 nesta fase.'
+                  ? `Os creditos sao lancados pela central da ${MARCA.empresa} nesta fase.`
                   : 'Faca uma recarga para comecar a usar.'}
               </Text>
             </View>

@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Botao } from '../src/components/Botao';
 import { Campo } from '../src/components/Campo';
 import { Logo } from '../src/components/Logo';
+import { MARCA } from '../src/config/rede27.config';
 import { formatarCPF, somenteDigitos, validarCPF } from '../src/lib/cpf';
 import { mensagemDeErro } from '../src/lib/supabase';
 import { useSessao } from '../src/state/sessao';
@@ -110,7 +111,7 @@ export default function Login() {
           <Text style={estilos.subtitulo}>
             {modo === 'entrar'
               ? 'Entre com o seu CPF para chamar um servico.'
-              : 'Preencha os dados para abrir a sua conta na REDE27.'}
+              : `Preencha os dados para abrir a sua conta na ${MARCA.empresa}.`}
           </Text>
 
           <View style={estilos.formulario}>
@@ -216,7 +217,7 @@ export default function Login() {
         </View>
 
         <Text style={estilos.rodape}>
-          REDE27 — transporte de passageiros, bens e encomendas.
+          {MARCA.nomeApp} · {MARCA.empresa} — {MARCA.slogan}.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

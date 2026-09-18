@@ -56,7 +56,7 @@ export function mensagemDeErro(erro: unknown): string {
     // Configuracao do projeto, nao erro do passageiro: dominio de login recusado
     // pelo Supabase ou confirmacao de e-mail ainda ligada.
     [/email address .* is invalid|email_address_invalid/i,
-      'Cadastro indisponivel no momento. Avise o suporte da REDE27.'],
+      'Cadastro indisponivel no momento. Avise o suporte da REDE BRASIL.'],
     [/failed to fetch|network request failed/i,
       'Sem conexao com o servidor. Verifique a internet e tente de novo.'],
     [/sessao expirada/i, 'Sessao expirada. Entre novamente.'],
