@@ -35,7 +35,7 @@ import type {
   PassageiroRow,
 } from '../src/types/database';
 
-type Aba = 'alertas' | 'corridas' | 'precos' | 'cidades' | 'motoristas';
+type Aba = 'alertas' | 'corridas' | 'carteiras' | 'precos' | 'cidades' | 'motoristas';
 
 /** PAINEL ADMIN (web). */
 export default function PainelAdmin() {
@@ -143,6 +143,7 @@ function Painel() {
   const abas: Array<{ chave: Aba; rotulo: string }> = [
     { chave: 'alertas', rotulo: `Protocolo 03${alertasAtivos ? ` (${alertasAtivos})` : ''}` },
     { chave: 'corridas', rotulo: 'Corridas' },
+    { chave: 'carteiras', rotulo: 'Carteiras' },
     { chave: 'precos', rotulo: 'Precos e taxa' },
     { chave: 'cidades', rotulo: 'Cidades' },
     { chave: 'motoristas', rotulo: 'Motoristas' },
@@ -182,6 +183,7 @@ function Painel() {
       >
         {aba === 'alertas' ? <AbaAlertas onContar={setAlertasAtivos} /> : null}
         {aba === 'corridas' ? <AbaCorridas /> : null}
+        {aba === 'carteiras' ? <AbaCarteiras /> : null}
         {aba === 'precos' ? <AbaPrecos /> : null}
         {aba === 'cidades' ? <AbaCidades /> : null}
         {aba === 'motoristas' ? <AbaMotoristas /> : null}
@@ -570,6 +572,129 @@ function Total({ rotulo, valor, destaque }: { rotulo: string; valor: string; des
     <View style={[estilos.total, destaque && estilos.totalDestaque]}>
       <Text style={estilos.totalRotulo}>{rotulo}</Text>
       <Text style={[estilos.totalValor, destaque && estilos.totalValorDestaque]}>{valor}</Text>
+    </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Carteiras                                                                  */
+/* -------------------------------------------------------------------------- */
+
+type PassageiroComSaldo = PassageiroRow & { saldo_centavos: number };
+
+function AbaCarteiras() {
+  const [passageiros, setPassageiros] = useState<PassageiroComSaldo[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [valores, setValores] = useState<Record<string, string>>({});
+  const [processando, setProcessando] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    const [pess, cart] = await Promise.all([
+      supabase.from('passageiros').select('*').order('criado_em', { ascending: false }),
+      supabase.from('carteiras').select('passageiro_id, saldo_centavos'),
+    ]);
+
+    const saldos = new Map((cart.data ?? []).map((c) => [c.passageiro_id, c.saldo_centavos]));
+    setPassageiros(
+      (pess.data ?? []).map((p) => ({ ...p, saldo_centavos: saldos.get(p.id) ?? 0 })),
+    );
+    setCarregando(false);
+  }, []);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const creditar = useCallback(
+    async (passageiro: PassageiroComSaldo) => {
+      const bruto = (valores[passageiro.id] ?? '').replace(',', '.');
+      const reais = Number(bruto);
+
+      setErro(null);
+      setOk(null);
+
+      if (!Number.isFinite(reais) || reais <= 0) {
+        setErro('Informe um valor maior que zero.');
+        return;
+      }
+
+      setProcessando(passageiro.id);
+      try {
+        const { error } = await supabase.rpc('admin_creditar_carteira', {
+          p_passageiro_id: passageiro.id,
+          p_valor_centavos: paraCentavos(reais),
+          p_descricao: 'Credito lancado pela central',
+        });
+        if (error) throw error;
+
+        setValores((v) => ({ ...v, [passageiro.id]: '' }));
+        setOk(`${brl(reais)} creditado para ${passageiro.nome || 'passageiro'}.`);
+        await carregar();
+      } catch (e) {
+        setErro(mensagemDeErro(e));
+      } finally {
+        setProcessando(null);
+      }
+    },
+    [valores, carregar],
+  );
+
+  if (carregando) return <ActivityIndicator color={colors.primary} style={estilos.spinner} />;
+
+  return (
+    <View style={estilos.secao}>
+      <Text style={estilos.secaoTitulo}>Carteiras dos passageiros</Text>
+      <Text style={estilos.nota}>
+        Nesta fase o saldo e lancado pela central. A recarga pelo proprio passageiro entra quando
+        houver pagamento integrado. Limite de R$ 1.000,00 por lancamento.
+      </Text>
+
+      {erro ? (
+        <View style={estilos.alerta}>
+          <Text style={estilos.alertaTexto}>{erro}</Text>
+        </View>
+      ) : null}
+      {ok ? (
+        <View style={estilos.sucesso}>
+          <Text style={estilos.sucessoTexto}>{ok}</Text>
+        </View>
+      ) : null}
+
+      {passageiros.length === 0 ? (
+        <Text style={estilos.vazio}>Nenhum passageiro cadastrado ainda.</Text>
+      ) : (
+        passageiros.map((p) => (
+          <View key={p.id} style={[estilos.linhaCartao, shadow(1)]}>
+            <View style={estilos.linhaTopo}>
+              <Text style={estilos.destino}>{p.nome || 'Sem nome'}</Text>
+              <Text style={estilos.valor}>{brl(paraReais(p.saldo_centavos))}</Text>
+            </View>
+            <Text style={estilos.meta}>
+              {formatarCPF(p.cpf)} · {p.telefone || 'sem telefone'}
+            </Text>
+            <View style={estilos.doisCampos}>
+              <Campo
+                rotulo="Creditar (R$)"
+                value={valores[p.id] ?? ''}
+                onChangeText={(t) => setValores((v) => ({ ...v, [p.id]: t }))}
+                keyboardType="decimal-pad"
+                placeholder="50,00"
+                containerStyle={estilos.campoMetade}
+              />
+              <View style={estilos.campoMetade}>
+                <Botao
+                  titulo="Lancar credito"
+                  onPress={() => creditar(p)}
+                  carregando={processando === p.id}
+                  style={estilos.botaoCredito}
+                />
+              </View>
+            </View>
+          </View>
+        ))
+      )}
     </View>
   );
 }
@@ -985,6 +1110,7 @@ const estilos = StyleSheet.create({
   linkInativo: { color: colors.textFaint },
   doisCampos: { flexDirection: 'row', gap: spacing.md },
   campoMetade: { flex: 1 },
+  botaoCredito: { marginTop: 22 },
   campoLargo: { flex: 3 },
   campoCurto: { flex: 1 },
   totais: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

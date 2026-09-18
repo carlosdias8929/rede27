@@ -221,6 +221,10 @@ export type Database = {
         Args: { p_alerta_id: string; p_observacao?: string };
         Returns: Alerta03Row;
       };
+      admin_creditar_carteira: {
+        Args: { p_passageiro_id: string; p_valor_centavos: number; p_descricao?: string };
+        Returns: number;
+      };
       eh_admin: { Args: Record<string, never>; Returns: boolean };
       eh_motorista: { Args: Record<string, never>; Returns: boolean };
     };

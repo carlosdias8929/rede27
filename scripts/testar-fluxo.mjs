@@ -459,7 +459,42 @@ if (novaCidade.data) await ADM.c.from('cidades').delete().eq('id', novaCidade.da
 const passageiroCidade = await A.c.from('cidades').insert({ nome: 'Invasao', uf: 'BA' }).select();
 ok('passageiro NAO cadastra cidade', Boolean(passageiroCidade.error) || (passageiroCidade.data?.length ?? 0) === 0);
 
-secao('12. Nova corrida apos encerrar');
+secao('12. Admin lanca credito na carteira');
+
+const antesCredito = await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle();
+const lancamento = await ADM.c.rpc('admin_creditar_carteira', {
+  p_passageiro_id: A.uid,
+  p_valor_centavos: 1500,
+  p_descricao: 'Teste automatizado',
+});
+ok('admin credita pelo painel', !lancamento.error, lancamento.error?.message ?? '');
+
+const depoisCredito = await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle();
+ok(
+  'saldo sobe exatamente o valor lancado',
+  depoisCredito.data?.saldo_centavos === (antesCredito.data?.saldo_centavos ?? 0) + 1500,
+  `${brl(antesCredito.data?.saldo_centavos ?? 0)} -> ${brl(depoisCredito.data?.saldo_centavos ?? 0)}`,
+);
+
+const acimaDoTeto = await ADM.c.rpc('admin_creditar_carteira', {
+  p_passageiro_id: A.uid,
+  p_valor_centavos: 100001,
+});
+ok('teto por lancamento respeitado', /limite/i.test(acimaDoTeto.error?.message ?? ''), acimaDoTeto.error?.message ?? 'PASSOU!');
+
+const passageiroCredita = await A.c.rpc('admin_creditar_carteira', {
+  p_passageiro_id: A.uid,
+  p_valor_centavos: 5000,
+});
+ok('passageiro NAO credita a si mesmo', Boolean(passageiroCredita.error), passageiroCredita.error?.message ?? 'CREDITOU!');
+
+const motoristaCredita = await MOT.c.rpc('admin_creditar_carteira', {
+  p_passageiro_id: A.uid,
+  p_valor_centavos: 5000,
+});
+ok('motorista NAO credita passageiro', Boolean(motoristaCredita.error), motoristaCredita.error?.message ?? 'CREDITOU!');
+
+secao('13. Nova corrida apos encerrar');
 
 const nova = await A.c.rpc('criar_corrida', {
   p_categoria_chave: 'sem_ar',
