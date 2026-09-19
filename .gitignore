@@ -45,3 +45,6 @@ yarn-error.*
 
 # prints gerados para enviar ao cliente
 docs/prints/
+
+# entrega gerada para o cliente
+entrega/
