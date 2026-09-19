@@ -32,7 +32,11 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -61,7 +65,10 @@
       ]
     ],
     "extra": {
-      "eas": {}
+      "eas": {
+        "projectId": "38e47e3f-7a23-4ca6-8616-fbe51d7f3ed8"
+      },
+      "router": {}
     }
   }
 }
