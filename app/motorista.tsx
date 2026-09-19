@@ -472,6 +472,23 @@ function Operacao({ onAbrirPerfil }: { onAbrirPerfil: () => void }) {
               {brl(paraReais(minha.valor_estimado_centavos))} ·{' '}
               {Number(minha.distancia_km).toFixed(1).replace('.', ',')} km
             </Text>
+
+            {/* O motorista precisa saber do troco ANTES de sair, nao na hora. */}
+            {minha.forma_pagamento === 'dinheiro' ? (
+              <View style={estilos.dinheiro}>
+                <Text style={estilos.dinheiroTitulo}>Pagamento em dinheiro</Text>
+                {minha.troco_centavos !== null ? (
+                  <Text style={estilos.dinheiroTexto}>
+                    Paga com {brl(paraReais(minha.valor_pago_centavos ?? 0))} · leve{' '}
+                    {brl(paraReais(minha.troco_centavos))} de troco
+                  </Text>
+                ) : (
+                  <Text style={estilos.dinheiroTexto}>
+                    O passageiro nao informou com quanto vai pagar.
+                  </Text>
+                )}
+              </View>
+            ) : null}
             <Text style={estilos.passo}>
               Passo {minha.passo_atual} de 5 —{' '}
               {CICLO_CORRIDA.find((p) => p.numero === minha.passo_atual)?.titulo}
@@ -493,12 +510,23 @@ function Operacao({ onAbrirPerfil }: { onAbrirPerfil: () => void }) {
             <Text style={estilos.destino} numberOfLines={1}>
               {ultimaConcluida.destino_texto}
             </Text>
-            <Text style={estilos.concluidoValor}>
-              Voce recebe {brl(paraReais(ultimaConcluida.valor_motorista_centavos ?? 0))}
-            </Text>
+            {ultimaConcluida.forma_pagamento === 'dinheiro' ? (
+              <>
+                <Text style={estilos.concluidoValor}>
+                  Voce recebeu {brl(paraReais(ultimaConcluida.valor_final_centavos ?? 0))} em maos
+                </Text>
+                <Text style={estilos.deveEmpresa}>
+                  Repassar {brl(paraReais(ultimaConcluida.valor_empresa_centavos ?? 0))} a{' '}
+                  {MARCA.empresa} ({ultimaConcluida.taxa_empresa_percentual}%)
+                </Text>
+              </>
+            ) : (
+              <Text style={estilos.concluidoValor}>
+                Voce recebe {brl(paraReais(ultimaConcluida.valor_motorista_centavos ?? 0))}
+              </Text>
+            )}
             <Text style={estilos.meta}>
               Corrida de {brl(paraReais(ultimaConcluida.valor_final_centavos ?? 0))} ·{' '}
-              taxa {MARCA.empresa} {ultimaConcluida.taxa_empresa_percentual}% ·{' '}
               {dataHoraCurta(ultimaConcluida.atualizada_em)}
             </Text>
           </View>
@@ -523,8 +551,14 @@ function Operacao({ onAbrirPerfil }: { onAbrirPerfil: () => void }) {
               </View>
               <Text style={estilos.meta}>
                 {Number(corrida.distancia_km).toFixed(1).replace('.', ',')} km ·{' '}
-                {dataHoraCurta(corrida.criada_em)}
+                {dataHoraCurta(corrida.criada_em)} ·{' '}
+                {corrida.forma_pagamento === 'dinheiro' ? 'dinheiro' : 'carteira'}
               </Text>
+              {corrida.forma_pagamento === 'dinheiro' && corrida.troco_centavos !== null ? (
+                <Text style={estilos.trocoFila}>
+                  Troco de {brl(paraReais(corrida.troco_centavos))}
+                </Text>
+              ) : null}
               <Botao
                 titulo="Aceitar corrida"
                 onPress={() => aceitar(corrida)}
@@ -596,6 +630,18 @@ const estilos = StyleSheet.create({
   },
   concluidoTitulo: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.success },
   concluidoValor: { fontSize: font.size.lg, fontWeight: font.weight.heavy, color: colors.primaryDark },
+  deveEmpresa: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.warning },
+  dinheiro: {
+    backgroundColor: colors.accentBg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: palette.gold300,
+    padding: spacing.md,
+    gap: 2,
+  },
+  dinheiroTitulo: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.accentText },
+  dinheiroTexto: { fontSize: font.size.sm, color: colors.text },
+  trocoFila: { fontSize: font.size.xs, fontWeight: font.weight.semibold, color: colors.accentText },
   sair: { color: palette.gold300, fontSize: font.size.sm, fontWeight: font.weight.semibold },
   conteudo: {
     padding: spacing.lg,

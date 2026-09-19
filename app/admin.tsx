@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AbaEmpresa } from '../src/components/AbaEmpresa';
 import { Botao } from '../src/components/Botao';
 import { Campo } from '../src/components/Campo';
 import { Logo } from '../src/components/Logo';
@@ -36,7 +37,7 @@ import type {
   PassageiroRow,
 } from '../src/types/database';
 
-type Aba = 'alertas' | 'corridas' | 'carteiras' | 'precos' | 'cidades' | 'motoristas';
+type Aba = 'alertas' | 'corridas' | 'carteiras' | 'precos' | 'empresa' | 'cidades' | 'motoristas';
 
 /** PAINEL ADMIN (web). */
 export default function PainelAdmin() {
@@ -146,6 +147,7 @@ function Painel() {
     { chave: 'corridas', rotulo: 'Corridas' },
     { chave: 'carteiras', rotulo: 'Carteiras' },
     { chave: 'precos', rotulo: 'Precos e taxa' },
+    { chave: 'empresa', rotulo: 'Empresa e PIX' },
     { chave: 'cidades', rotulo: 'Cidades' },
     { chave: 'motoristas', rotulo: 'Motoristas' },
   ];
@@ -186,6 +188,7 @@ function Painel() {
         {aba === 'corridas' ? <AbaCorridas /> : null}
         {aba === 'carteiras' ? <AbaCarteiras /> : null}
         {aba === 'precos' ? <AbaPrecos /> : null}
+        {aba === 'empresa' ? <AbaEmpresa /> : null}
         {aba === 'cidades' ? <AbaCidades /> : null}
         {aba === 'motoristas' ? <AbaMotoristas /> : null}
       </ScrollView>

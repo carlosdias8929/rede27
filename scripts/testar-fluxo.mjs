@@ -532,7 +532,97 @@ const motoristaCredita = await MOT.c.rpc('admin_creditar_carteira', {
 });
 ok('motorista NAO credita passageiro', Boolean(motoristaCredita.error), motoristaCredita.error?.message ?? 'CREDITOU!');
 
-secao('14. Nova corrida apos encerrar');
+secao('14. Dinheiro com troco');
+
+const pendD = await A.c.from('corridas').select('id').eq('passageiro_id', A.uid).eq('status','aberta').maybeSingle();
+if (pendD.data) await A.c.rpc('cancelar_corrida', { p_corrida_id: pendD.data.id });
+
+const saldoAntesDinheiro = (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle()).data?.saldo_centavos ?? 0;
+
+const emDinheiro = await A.c.rpc('criar_corrida', {
+  p_categoria_chave: 'sem_ar',
+  p_destino_texto: 'Corrida em dinheiro',
+  p_forma_pagamento: 'dinheiro',
+  p_valor_pago_centavos: 5000,
+});
+const cd = Array.isArray(emDinheiro.data) ? emDinheiro.data[0] : emDinheiro.data;
+ok('cria corrida em dinheiro', !emDinheiro.error, emDinheiro.error?.message ?? '');
+ok('troco calculado no servidor', cd?.troco_centavos === 5000 - cd?.valor_estimado_centavos,
+  `pagou ${brl(5000)} - corrida ${brl(cd?.valor_estimado_centavos ?? 0)} = troco ${brl(cd?.troco_centavos ?? 0)}`);
+
+// A corrida acima ainda esta aberta. Se tentarmos agora, quem barra e a regra
+// de "uma chamada por vez" — e o teste passaria sem provar nada sobre o valor.
+// Usamos o outro passageiro, que esta livre.
+const trocoB = await B.c.from('corridas').select('id').eq('passageiro_id', B.uid).eq('status','aberta').maybeSingle();
+if (trocoB.data) await B.c.rpc('cancelar_corrida', { p_corrida_id: trocoB.data.id });
+
+const pagoDeMenos = await B.c.rpc('criar_corrida', {
+  p_categoria_chave: 'sem_ar', p_destino_texto: 'Troco insuficiente',
+  p_forma_pagamento: 'dinheiro', p_valor_pago_centavos: 100,
+});
+ok(
+  'recusa valor menor que a corrida',
+  /menor que o da corrida/i.test(pagoDeMenos.error?.message ?? ''),
+  pagoDeMenos.error?.message ?? 'ACEITOU!',
+);
+
+// Em dinheiro, saldo zero nao pode impedir: o passageiro paga na mao.
+const semSaldoDinheiro = await B.c.rpc('criar_corrida', {
+  p_categoria_chave: 'sem_ar', p_destino_texto: 'Dinheiro sem saldo',
+  p_forma_pagamento: 'dinheiro', p_valor_pago_centavos: 5000,
+});
+ok('dinheiro funciona com carteira zerada', !semSaldoDinheiro.error, semSaldoDinheiro.error?.message ?? '');
+if (!semSaldoDinheiro.error) {
+  const n = Array.isArray(semSaldoDinheiro.data) ? semSaldoDinheiro.data[0] : semSaldoDinheiro.data;
+  await B.c.rpc('cancelar_corrida', { p_corrida_id: n.id });
+}
+
+// E na carteira, saldo zero continua barrando.
+const semSaldoCarteira = await B.c.rpc('criar_corrida', {
+  p_categoria_chave: 'sem_ar', p_destino_texto: 'Carteira sem saldo', p_forma_pagamento: 'carteira',
+});
+ok(
+  'carteira zerada continua barrando na carteira',
+  /[Ss]aldo insuficiente/.test(semSaldoCarteira.error?.message ?? ''),
+  semSaldoCarteira.error?.message ?? 'ACEITOU!',
+);
+
+await MOT.c.rpc('aceitar_corrida', { p_corrida_id: cd.id });
+for (const chave of ['embarque_confirmado','em_deslocamento','servico_concluido']) {
+  await MOT.c.rpc('avancar_protocolo', { p_corrida_id: cd.id, p_chave: chave });
+}
+
+const fimD = (await A.c.from('corridas').select('*').eq('id', cd.id).maybeSingle()).data;
+const saldoDepoisDinheiro = (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle()).data?.saldo_centavos ?? 0;
+
+ok('corrida em dinheiro conclui', fimD?.status === 'concluida', `status=${fimD?.status}`);
+ok('carteira NAO e debitada em dinheiro', saldoDepoisDinheiro === saldoAntesDinheiro,
+  `${brl(saldoAntesDinheiro)} -> ${brl(saldoDepoisDinheiro)}`);
+ok('rateio registrado mesmo em dinheiro',
+  (fimD?.valor_empresa_centavos ?? 0) + (fimD?.valor_motorista_centavos ?? 0) === fimD?.valor_final_centavos,
+  `empresa ${brl(fimD?.valor_empresa_centavos ?? 0)} + motorista ${brl(fimD?.valor_motorista_centavos ?? 0)}`);
+
+const semExtrato = await A.c.from('transacoes').select('*').eq('corrida_id', cd.id);
+ok('nenhum lancamento na carteira por corrida em dinheiro', (semExtrato.data?.length ?? 0) === 0,
+  `${semExtrato.data?.length} lancamento(s)`);
+
+secao('15. Empresa e chaves PIX');
+
+const contas = await A.c.from('contas_recebimento').select('*');
+ok('passageiro ve as chaves PIX ativas', !contas.error && (contas.data?.length ?? 0) >= 1,
+  contas.data?.map(c => `${c.banco}/${c.tipo_chave}`).join(', ') ?? contas.error?.message);
+
+const passageiroMexeConta = await A.c.from('contas_recebimento').update({ chave: 'hack' }).eq('id', contas.data[0].id).select();
+ok('passageiro NAO altera chave PIX', (passageiroMexeConta.data?.length ?? 0) === 0,
+  passageiroMexeConta.error ? passageiroMexeConta.error.message : `${passageiroMexeConta.data?.length} linha(s)`);
+
+const adminMexeConta = await ADM.c.from('contas_recebimento').update({ ativa: true }).eq('id', contas.data[0].id).select();
+ok('admin administra chave PIX', !adminMexeConta.error && (adminMexeConta.data?.length ?? 0) === 1, adminMexeConta.error?.message ?? '');
+
+const cnpj = await ADM.c.from('configuracoes').select('valor').eq('chave','empresa_cnpj').maybeSingle();
+ok('CNPJ da empresa e editavel no painel', Boolean(cnpj.data?.valor), cnpj.data?.valor ?? '');
+
+secao('16. Nova corrida apos encerrar');
 
 const nova = await A.c.rpc('criar_corrida', {
   p_categoria_chave: 'sem_ar',

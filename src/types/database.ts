@@ -9,6 +9,8 @@ export type StatusCorrida = 'aberta' | 'concluida' | 'cancelada';
 export type TipoTransacao = 'credito' | 'debito';
 export type Passo = 1 | 2 | 3 | 4 | 5;
 export type StatusAlerta03 = 'ativo' | 'encerrado';
+export type FormaPagamento = 'carteira' | 'dinheiro';
+export type TipoChavePix = 'cnpj' | 'cpf' | 'celular' | 'email' | 'aleatoria';
 
 export type CategoriaRow = {
   chave: string;
@@ -106,6 +108,11 @@ export type CorridaRow = {
   taxa_empresa_percentual: number | null;
   valor_motorista_centavos: number | null;
   valor_empresa_centavos: number | null;
+  forma_pagamento: FormaPagamento;
+  /** Somente dinheiro: com quanto o passageiro disse que vai pagar. */
+  valor_pago_centavos: number | null;
+  /** Somente dinheiro: calculado no servidor. */
+  troco_centavos: number | null;
   criada_em: string;
   atualizada_em: string;
 };
@@ -117,6 +124,17 @@ export type CorridaEventoRow = {
   chave: string;
   observacao: string;
   criado_em: string;
+};
+
+export type ContaRecebimentoRow = {
+  id: string;
+  banco: string;
+  tipo_chave: TipoChavePix;
+  chave: string;
+  titular: string;
+  ativa: boolean;
+  ordem: number;
+  atualizado_em: string;
 };
 
 export type Alerta03Row = {
@@ -161,6 +179,7 @@ export type Database = {
       administradores: Tabela<AdministradorRow>;
       cidades: Tabela<CidadeRow>;
       configuracoes: Tabela<ConfiguracaoRow>;
+      contas_recebimento: Tabela<ContaRecebimentoRow>;
       carteiras: Tabela<CarteiraRow>;
       transacoes: Tabela<TransacaoRow>;
       corridas: Tabela<CorridaRow>;
@@ -180,6 +199,8 @@ export type Database = {
           p_destino_lat?: number | null;
           p_destino_lng?: number | null;
           p_cidade_id?: string | null;
+          p_forma_pagamento?: FormaPagamento;
+          p_valor_pago_centavos?: number | null;
         };
         Returns: CorridaRow;
       };

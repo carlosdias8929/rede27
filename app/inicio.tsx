@@ -17,13 +17,14 @@ import { CampoDestino } from '../src/components/CampoDestino';
 import { CartaoCarteira } from '../src/components/CartaoCarteira';
 import { Logo } from '../src/components/Logo';
 import { estimarCentavos, SeletorCategoria } from '../src/components/SeletorCategoria';
+import { lerValorEmCentavos, SeletorPagamento } from '../src/components/SeletorPagamento';
 import { CATEGORIAS, DISTANCIA, MARCA, SAUDACOES } from '../src/config/rede27.config';
 import { brl, paraReais } from '../src/lib/format';
 import { distanciaKm, localizacaoAtual, type Coordenada } from '../src/lib/geo';
 import { mensagemDeErro, supabase } from '../src/lib/supabase';
 import { useSessao } from '../src/state/sessao';
 import { colors, font, palette, radius, spacing } from '../src/theme';
-import type { CategoriaRow, CidadeRow, CorridaRow } from '../src/types/database';
+import type { CategoriaRow, CidadeRow, CorridaRow, FormaPagamento } from '../src/types/database';
 
 const CATEGORIAS_FALLBACK: CategoriaRow[] = CATEGORIAS.map((c, i) => ({
   chave: c.chave,
@@ -54,6 +55,8 @@ export default function Inicio() {
   const [origemCoord, setOrigemCoord] = useState<Coordenada | null>(null);
   const [buscandoGps, setBuscandoGps] = useState(false);
 
+  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('carteira');
+  const [valorPago, setValorPago] = useState('');
   const [erroDestino, setErroDestino] = useState<string | null>(null);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -81,7 +84,13 @@ export default function Inicio() {
 
   const estimativa = categoriaAtual ? estimarCentavos(categoriaAtual, km) : 0;
   const saldo = carteira?.saldo_centavos ?? 0;
-  const saldoInsuficiente = saldo < estimativa;
+  const pagoCentavos = lerValorEmCentavos(valorPago);
+
+  // Saldo so trava quando o pagamento e pela carteira.
+  const saldoInsuficiente = formaPagamento === 'carteira' && saldo < estimativa;
+  // Em dinheiro, o valor informado precisa cobrir a corrida.
+  const dinheiroInsuficiente =
+    formaPagamento === 'dinheiro' && pagoCentavos !== null && pagoCentavos < estimativa;
 
   const carregarBase = useCallback(async () => {
     const [cats, cids, confs] = await Promise.all([
@@ -184,6 +193,8 @@ export default function Inicio() {
         p_destino_lat: destinoCoord?.latitude ?? null,
         p_destino_lng: destinoCoord?.longitude ?? null,
         p_cidade_id: cidadeId,
+        p_forma_pagamento: formaPagamento,
+        p_valor_pago_centavos: formaPagamento === 'dinheiro' ? pagoCentavos : null,
       });
 
       if (error) throw error;
@@ -198,7 +209,16 @@ export default function Inicio() {
     } finally {
       setChamando(false);
     }
-  }, [categoriaAtual, destino, destinoCoord, origemCoord, cidadeId, recarregarCarteira]);
+  }, [
+    categoriaAtual,
+    destino,
+    destinoCoord,
+    origemCoord,
+    cidadeId,
+    formaPagamento,
+    pagoCentavos,
+    recarregarCarteira,
+  ]);
 
   const acionar03 = useCallback(async () => {
     setAcionando03(true);
@@ -332,6 +352,15 @@ export default function Inicio() {
           distanciaKm={km}
         />
 
+        <SeletorPagamento
+          forma={formaPagamento}
+          onFormaChange={setFormaPagamento}
+          valorPago={valorPago}
+          onValorPagoChange={setValorPago}
+          valorCorridaCentavos={estimativa}
+          saldoCentavos={saldo}
+        />
+
         <View style={estilos.resumo}>
           <View style={estilos.resumoInfo}>
             <Text style={estilos.resumoRotulo}>Valor estimado</Text>
@@ -357,11 +386,13 @@ export default function Inicio() {
         <BotaoChamar
           onChamar={chamar}
           carregando={chamando}
-          desabilitado={saldoInsuficiente || !destino.trim()}
+          desabilitado={saldoInsuficiente || dinheiroInsuficiente || !destino.trim()}
           motivoBloqueio={
             saldoInsuficiente
               ? `Saldo insuficiente. Esta chamada custa ${brl(paraReais(estimativa))}.`
-              : null
+              : dinheiroInsuficiente
+                ? `O valor informado e menor que ${brl(paraReais(estimativa))}.`
+                : null
           }
         />
 

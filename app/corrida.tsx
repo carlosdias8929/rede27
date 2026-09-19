@@ -170,6 +170,7 @@ export default function Corrida() {
         <View style={estilos.etiquetas}>
           <Etiqueta texto={brl(valor)} destaque />
           <Etiqueta texto={`${Number(corrida.distancia_km).toFixed(1).replace('.', ',')} km`} />
+          <Etiqueta texto={corrida.forma_pagamento === 'dinheiro' ? 'DINHEIRO' : 'CARTEIRA'} />
           {cancelada ? <Etiqueta texto="CANCELADA" perigo /> : null}
           {concluida ? <Etiqueta texto="CONCLUIDA" destaque /> : null}
         </View>
@@ -252,11 +253,23 @@ export default function Corrida() {
           />
         </View>
 
+        {corrida.forma_pagamento === 'dinheiro' && corrida.troco_centavos !== null ? (
+          <View style={estilos.trocoCaixa}>
+            <Text style={estilos.trocoRotulo}>Pagamento em dinheiro</Text>
+            <Text style={estilos.trocoLinha}>
+              Voce paga com {brl(paraReais(corrida.valor_pago_centavos ?? 0))} e recebe{' '}
+              {brl(paraReais(corrida.troco_centavos))} de troco.
+            </Text>
+          </View>
+        ) : null}
+
         {concluida ? (
           <View style={estilos.sucesso}>
             <Text style={estilos.sucessoTitulo}>Servico concluido</Text>
             <Text style={estilos.sucessoTexto}>
-              {brl(valor)} foi debitado da sua carteira {MARCA.nomeApp}.
+              {corrida.forma_pagamento === 'dinheiro'
+                ? `${brl(valor)} pagos direto ao motorista.`
+                : `${brl(valor)} foi debitado da sua carteira ${MARCA.nomeApp}.`}
             </Text>
           </View>
         ) : null}
@@ -402,6 +415,16 @@ const estilos = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  trocoCaixa: {
+    backgroundColor: colors.secondaryLight,
+    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.secondary,
+    padding: spacing.lg,
+    gap: spacing.xs,
+  },
+  trocoRotulo: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: colors.secondaryDark },
+  trocoLinha: { fontSize: font.size.sm, color: colors.text },
   saudacao: {
     backgroundColor: colors.accentBg,
     borderRadius: radius.lg,
