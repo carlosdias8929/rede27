@@ -42,3 +42,6 @@ yarn-error.*
 # tooling local
 .claude
 .mcp.json
+
+# prints gerados para enviar ao cliente
+docs/prints/
