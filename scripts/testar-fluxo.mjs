@@ -163,24 +163,48 @@ ok('categorias publicadas', (catsR.data?.length ?? 0) >= 3, catsR.data?.map((c) 
 
 const comAr = catsR.data.find((c) => c.chave === 'com_ar');
 const ehAdmin = await ADM.c.from('administradores').select('id').eq('id', ADM.uid).maybeSingle();
-const saldo = carteira.saldo_centavos;
 
-if (!ehAdmin.data || saldo < 5000) {
+// Autorizar um administrador e o unico preparo que o script nao faz sozinho:
+// ninguem se promove a admin, por decisao de projeto.
+if (!ehAdmin.data) {
   console.log('\n\x1b[33mFalta preparo. Rode no SQL Editor do Supabase:\x1b[0m\n');
-  if (!ehAdmin.data) {
-    console.log(
-      `insert into public.administradores (id, nome)\nvalues ('${ADM.uid}', 'Admin Teste')\non conflict (id) do update set ativo = true;\n`,
-    );
-  }
-  if (saldo < 5000) {
-    console.log(`select public.creditar_carteira('${A.uid}'::uuid, 50000, 'Credito de teste');\n`);
-  }
+  console.log(
+    `insert into public.administradores (id, nome)\nvalues ('${ADM.uid}', 'Admin Teste')\non conflict (id) do update set ativo = true;\n`,
+  );
   console.log('Depois rode este script de novo.');
   process.exit(1);
 }
-
 ok('conta de administrador autorizada', true);
-ok('passageiro com saldo', saldo >= 5000, brl(saldo));
+
+// O saldo o script resolve sozinho, pelo mesmo lancamento de credito que o
+// Admin usa no painel. Antes era preciso rodar SQL na mao toda vez que as
+// corridas de teste gastavam a carteira — e foi o que travou esta execucao
+// depois de baixarmos o saldo da conta de demonstracao para um valor realista.
+const MINIMO = 8000;
+let saldo = carteira.saldo_centavos;
+
+if (saldo < MINIMO) {
+  const recarga = await ADM.c.rpc('admin_creditar_carteira', {
+    p_passageiro_id: A.uid,
+    // Valor modesto de proposito: a conta de teste tambem e a conta de
+    // demonstracao, e saldo alto na tela ja foi lido como preco da corrida.
+    p_valor_centavos: 10000,
+    p_descricao: 'Recarga automatica do teste de fluxo',
+  });
+
+  if (recarga.error) {
+    console.error('Nao foi possivel recarregar a carteira de teste:', recarga.error.message);
+    process.exit(1);
+  }
+
+  saldo =
+    (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle())
+      .data?.saldo_centavos ?? 0;
+
+  ok('carteira de teste recarregada pelo painel', saldo >= MINIMO, brl(saldo));
+} else {
+  ok('passageiro com saldo', saldo >= MINIMO, brl(saldo));
+}
 
 secao('5. Corrida com preco por km');
 
