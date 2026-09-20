@@ -19,10 +19,11 @@ export function CartaoCarteira({ saldoCentavos, onVerExtrato, carregando }: Prop
     <View style={[estilos.cartao, shadow(2)]}>
       <View style={estilos.topo}>
         <View style={estilos.rotuloBloco}>
-          <Text style={estilos.rotulo}>Carteira {MARCA.nomeApp}</Text>
+          <Text style={estilos.rotulo}>Saldo da carteira {MARCA.nomeApp}</Text>
           <Text style={estilos.saldo} accessibilityLabel={`Saldo de ${brl(paraReais(saldo))}`}>
             {carregando ? '—' : brl(paraReais(saldo))}
           </Text>
+          <Text style={estilos.explicacao}>Este e o seu saldo, nao o preco da corrida.</Text>
         </View>
 
         <View style={estilos.selo}>
@@ -88,6 +89,7 @@ const estilos = StyleSheet.create({
     fontWeight: font.weight.heavy,
     color: palette.navy900,
   },
+  explicacao: { fontSize: font.size.xs, color: palette.navy100 },
   aviso: { fontSize: font.size.xs, color: palette.gold300 },
   link: {
     fontSize: font.size.sm,

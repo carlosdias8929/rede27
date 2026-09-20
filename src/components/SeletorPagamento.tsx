@@ -103,7 +103,7 @@ export function SeletorPagamento({
           />
 
           <View style={[estilos.troco, troco === null && estilos.trocoVazio]}>
-            <Text style={estilos.trocoRotulo}>Troco</Text>
+            <Text style={estilos.trocoRotulo}>Troco a receber</Text>
             <Text style={estilos.trocoValor}>
               {troco === null ? '—' : brl(paraReais(troco))}
             </Text>

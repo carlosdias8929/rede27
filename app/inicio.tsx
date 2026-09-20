@@ -363,7 +363,7 @@ export default function Inicio() {
 
         <View style={estilos.resumo}>
           <View style={estilos.resumoInfo}>
-            <Text style={estilos.resumoRotulo}>Valor estimado</Text>
+            <Text style={estilos.resumoRotulo}>Preco desta corrida</Text>
             <Text style={estilos.resumoObs}>
               {km.toFixed(2).replace('.', ',')} km — {DISTANCIA.aviso}
             </Text>
