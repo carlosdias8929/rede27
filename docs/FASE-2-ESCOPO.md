@@ -134,8 +134,8 @@ do cliente.
 
 | Módulo | Prazo |
 | --- | --- |
-| A | 5 a 7 dias |
-| B | 4 a 5 dias após o cadastro no gateway estar aprovado |
+| A | 3 a 5 dias |
+| B | 2 a 3 dias após o cadastro no gateway estar aprovado |
 | C | 1 dia de trabalho + o período de teste exigido pelo Google |
 | D | 3 dias |
 
