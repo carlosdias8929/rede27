@@ -246,7 +246,7 @@ export const CARTEIRA = {
 // ---------------------------------------------------------------------------
 export const MARCA = {
   nomeApp: 'REDE 27',
-  empresa: 'REDE BRASIL',
+  empresa: 'REDE BRASIL HOJE',
   slogan: 'Transporte de passageiros, bens e encomendas',
   moeda: 'BRL',
   locale: 'pt-BR',
