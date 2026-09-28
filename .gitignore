@@ -48,3 +48,7 @@ docs/prints/
 
 # entrega gerada para o cliente
 entrega/
+
+# credenciais de assinatura baixadas do EAS (contem as senhas em texto puro)
+credentials.json
+credentials/
