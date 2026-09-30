@@ -227,8 +227,12 @@ export const CPF = {
 } as const;
 
 export const CARTEIRA = {
-  /** 'saldo_simples' = credito lancado pela administracao. Recarga: fase 2. */
-  modo: 'saldo_simples' as 'saldo_simples' | 'recarga_pagamento',
+  /**
+   * 'pix_manual' = o passageiro paga por PIX, envia o comprovante e o Admin
+   * aprova no painel. 'saldo_simples' = so a central lanca credito.
+   * 'recarga_pagamento' = gateway integrado (fase 2).
+   */
+  modo: 'pix_manual' as 'saldo_simples' | 'pix_manual' | 'recarga_pagamento',
   exigirSaldoParaChamar: true,
 } as const;
 

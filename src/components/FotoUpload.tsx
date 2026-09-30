@@ -1,36 +1,11 @@
-import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { escolherImagem } from '../lib/arquivo';
 import { supabase } from '../lib/supabase';
 import { colors, font, palette, radius, spacing } from '../theme';
 
 const BUCKET = 'motoristas';
-
-/**
- * Decodifica base64 sem depender de `atob`, que nao existe no React Native.
- * O Supabase aceita ArrayBuffer no upload, entao esse e o caminho que funciona
- * igual no Android e na web.
- */
-function base64ParaBytes(base64: string): Uint8Array {
-  const alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const limpo = base64.replace(/[^A-Za-z0-9+/]/g, '');
-  const bytes = new Uint8Array((limpo.length * 3) / 4);
-
-  let posicao = 0;
-  for (let i = 0; i < limpo.length; i += 4) {
-    const c0 = alfabeto.indexOf(limpo[i]);
-    const c1 = alfabeto.indexOf(limpo[i + 1]);
-    const c2 = alfabeto.indexOf(limpo[i + 2]);
-    const c3 = alfabeto.indexOf(limpo[i + 3]);
-
-    bytes[posicao++] = (c0 << 2) | (c1 >> 4);
-    if (c2 >= 0) bytes[posicao++] = ((c1 & 15) << 4) | (c2 >> 2);
-    if (c3 >= 0) bytes[posicao++] = ((c2 & 3) << 6) | c3;
-  }
-
-  return bytes.subarray(0, posicao);
-}
 
 type Props = {
   rotulo: string;
@@ -60,39 +35,27 @@ export function FotoUpload({
   const escolher = useCallback(async () => {
     setErro(null);
 
-    const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissao.granted) {
-      setErro('Permissao de acesso as fotos negada.');
+    let imagem;
+    try {
+      imagem = await escolherImagem({
+        editar: true,
+        aspecto: formato === 'retrato' ? [1, 1] : [4, 3],
+      });
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Nao foi possivel ler a imagem escolhida.');
       return;
     }
-
-    const escolha = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: formato === 'retrato' ? [1, 1] : [4, 3],
-      quality: 0.7,
-      base64: true,
-    });
-
-    if (escolha.canceled || !escolha.assets?.length) return;
-
-    const imagem = escolha.assets[0];
-    if (!imagem.base64) {
-      setErro('Nao foi possivel ler a imagem escolhida.');
-      return;
-    }
+    if (!imagem) return;
 
     setEnviando(true);
     try {
-      const tipo = imagem.mimeType ?? 'image/jpeg';
-      const extensao = tipo.includes('png') ? 'png' : tipo.includes('webp') ? 'webp' : 'jpg';
       // A pasta precisa ser o id do motorista: a policy do storage confere isso.
-      const caminho = `${motoristaId}/${nomeArquivo}.${extensao}`;
+      const caminho = `${motoristaId}/${nomeArquivo}.${imagem.extensao}`;
 
       const { error } = await supabase.storage
         .from(BUCKET)
-        .upload(caminho, base64ParaBytes(imagem.base64), {
-          contentType: tipo,
+        .upload(caminho, imagem.bytes, {
+          contentType: imagem.tipo,
           upsert: true,
         });
 

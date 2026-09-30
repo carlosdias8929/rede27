@@ -17,14 +17,18 @@ import { CampoDestino } from '../src/components/CampoDestino';
 import { CartaoCarteira } from '../src/components/CartaoCarteira';
 import { Logo } from '../src/components/Logo';
 import { estimarCentavos, SeletorCategoria } from '../src/components/SeletorCategoria';
-import { lerValorEmCentavos, SeletorPagamento } from '../src/components/SeletorPagamento';
+import {
+  lerValorEmCentavos,
+  SeletorPagamento,
+  type FormaEscolhida,
+} from '../src/components/SeletorPagamento';
 import { CATEGORIAS, DISTANCIA, MARCA, SAUDACOES } from '../src/config/rede27.config';
 import { brl, paraReais } from '../src/lib/format';
 import { distanciaKm, localizacaoAtual, type Coordenada } from '../src/lib/geo';
 import { mensagemDeErro, supabase } from '../src/lib/supabase';
 import { useSessao } from '../src/state/sessao';
 import { colors, font, palette, radius, spacing } from '../src/theme';
-import type { CategoriaRow, CidadeRow, CorridaRow, FormaPagamento } from '../src/types/database';
+import type { CategoriaRow, CidadeRow, CorridaRow } from '../src/types/database';
 
 const CATEGORIAS_FALLBACK: CategoriaRow[] = CATEGORIAS.map((c, i) => ({
   chave: c.chave,
@@ -55,7 +59,7 @@ export default function Inicio() {
   const [origemCoord, setOrigemCoord] = useState<Coordenada | null>(null);
   const [buscandoGps, setBuscandoGps] = useState(false);
 
-  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>('carteira');
+  const [formaPagamento, setFormaPagamento] = useState<FormaEscolhida>('carteira');
   const [valorPago, setValorPago] = useState('');
   const [erroDestino, setErroDestino] = useState<string | null>(null);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
@@ -87,7 +91,8 @@ export default function Inicio() {
   const pagoCentavos = lerValorEmCentavos(valorPago);
 
   // Saldo so trava quando o pagamento e pela carteira.
-  const saldoInsuficiente = formaPagamento === 'carteira' && saldo < estimativa;
+  // PIX entra como saldo, entao a regra e a mesma da carteira.
+  const saldoInsuficiente = formaPagamento !== 'dinheiro' && saldo < estimativa;
   // Em dinheiro, o valor informado precisa cobrir a corrida.
   const dinheiroInsuficiente =
     formaPagamento === 'dinheiro' && pagoCentavos !== null && pagoCentavos < estimativa;
@@ -193,7 +198,8 @@ export default function Inicio() {
         p_destino_lat: destinoCoord?.latitude ?? null,
         p_destino_lng: destinoCoord?.longitude ?? null,
         p_cidade_id: cidadeId,
-        p_forma_pagamento: formaPagamento,
+        // PIX ja virou saldo: no servidor a corrida e paga pela carteira.
+        p_forma_pagamento: formaPagamento === 'dinheiro' ? 'dinheiro' : 'carteira',
         p_valor_pago_centavos: formaPagamento === 'dinheiro' ? pagoCentavos : null,
       });
 
@@ -288,7 +294,13 @@ export default function Inicio() {
           <RefreshControl refreshing={atualizando} onRefresh={atualizar} tintColor={colors.primary} />
         }
       >
-        <CartaoCarteira saldoCentavos={saldo} onVerExtrato={() => router.push('/carteira')} />
+        <CartaoCarteira
+          saldoCentavos={saldo}
+          // Sem a carteira carregada, mostrar R$ 0,00 e "Sem saldo" assusta quem tem saldo.
+          carregando={!carteira}
+          onVerExtrato={() => router.push('/carteira')}
+          onAdicionarSaldo={() => router.push('/recarga')}
+        />
 
         {cidades.length > 1 ? (
           <View style={estilos.grupo}>
@@ -359,6 +371,9 @@ export default function Inicio() {
           onValorPagoChange={setValorPago}
           valorCorridaCentavos={estimativa}
           saldoCentavos={saldo}
+          onPagarComPix={(valor) =>
+            router.push({ pathname: '/recarga', params: { valor: String(valor) } })
+          }
         />
 
         <View style={estilos.resumo}>
@@ -388,7 +403,9 @@ export default function Inicio() {
           carregando={chamando}
           desabilitado={saldoInsuficiente || dinheiroInsuficiente || !destino.trim()}
           motivoBloqueio={
-            saldoInsuficiente
+            saldoInsuficiente && formaPagamento === 'pix'
+              ? 'Pague por PIX e aguarde a aprovacao do comprovante para chamar.'
+              : saldoInsuficiente
               ? `Saldo insuficiente. Esta chamada custa ${brl(paraReais(estimativa))}.`
               : dinheiroInsuficiente
                 ? `O valor informado e menor que ${brl(paraReais(estimativa))}.`

@@ -4,11 +4,20 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { brl, paraReais } from '../lib/format';
 import { colors, font, palette, radius, spacing } from '../theme';
 import type { FormaPagamento } from '../types/database';
+
+/**
+ * O que o passageiro escolhe na tela. PIX nao e uma forma de pagamento da
+ * corrida no servidor: o PIX entra como saldo na carteira (recarga aprovada
+ * pelo Admin) e a corrida e descontada do saldo, como na carteira.
+ */
+export type FormaEscolhida = FormaPagamento | 'pix';
 import { Campo } from './Campo';
 
 type Props = {
-  forma: FormaPagamento;
-  onFormaChange: (forma: FormaPagamento) => void;
+  forma: FormaEscolhida;
+  onFormaChange: (forma: FormaEscolhida) => void;
+  /** Abre a recarga por PIX com o valor sugerido, em centavos. */
+  onPagarComPix?: (valorCentavos: number) => void;
   /** Texto cru do campo "vai pagar com", como o passageiro digitou. */
   valorPago: string;
   onValorPagoChange: (texto: string) => void;
@@ -43,16 +52,26 @@ export function SeletorPagamento({
   onValorPagoChange,
   valorCorridaCentavos,
   saldoCentavos,
+  onPagarComPix,
 }: Props) {
   const pagoCentavos = lerValorEmCentavos(valorPago);
   const insuficiente = pagoCentavos !== null && pagoCentavos < valorCorridaCentavos;
   const troco = pagoCentavos !== null && !insuficiente ? pagoCentavos - valorCorridaCentavos : null;
 
-  const opcoes: Array<{ chave: FormaPagamento; titulo: string; detalhe: string }> = [
+  // Quanto falta no saldo para esta corrida, arredondado para reais inteiros.
+  const falta = Math.max(valorCorridaCentavos - saldoCentavos, 0);
+  const sugestaoPix = falta > 0 ? Math.max(Math.ceil(falta / 100) * 100, 100) : 0;
+
+  const opcoes: Array<{ chave: FormaEscolhida; titulo: string; detalhe: string }> = [
     {
       chave: 'carteira',
       titulo: 'Carteira',
       detalhe: `Saldo ${brl(paraReais(saldoCentavos))}`,
+    },
+    {
+      chave: 'pix',
+      titulo: 'PIX',
+      detalhe: 'QR ou copia e cola',
     },
     {
       chave: 'dinheiro',
@@ -85,6 +104,37 @@ export function SeletorPagamento({
           );
         })}
       </View>
+
+      {forma === 'pix' ? (
+        <View style={estilos.pix}>
+          {falta > 0 ? (
+            <>
+              <Text style={estilos.pixTitulo}>
+                Pague {brl(paraReais(sugestaoPix))} por PIX para esta corrida
+              </Text>
+              <Text style={estilos.pixTexto}>1. Pague pelo QR Code ou PIX copia e cola.</Text>
+              <Text style={estilos.pixTexto}>2. Envie a foto do comprovante.</Text>
+              <Text style={estilos.pixTexto}>3. A central confere e o valor entra na sua carteira.</Text>
+              <Text style={estilos.pixTexto}>4. Volte aqui e chame: a corrida e descontada do saldo.</Text>
+              {onPagarComPix ? (
+                <Pressable
+                  onPress={() => onPagarComPix(sugestaoPix)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Pagar ${brl(paraReais(sugestaoPix))} por PIX`}
+                  style={({ pressed }) => [estilos.pixBotao, pressed && { opacity: 0.85 }]}
+                >
+                  <Text style={estilos.pixBotaoTexto}>Pagar por PIX</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : (
+            <Text style={estilos.pixTexto}>
+              Seu saldo ja cobre esta corrida. Ao chamar, o valor e descontado da carteira
+              quando a corrida terminar.
+            </Text>
+          )}
+        </View>
+      ) : null}
 
       {forma === 'dinheiro' ? (
         <View style={estilos.dinheiro}>
@@ -152,4 +202,23 @@ const estilos = StyleSheet.create({
   trocoRotulo: { fontSize: font.size.sm, fontWeight: font.weight.semibold, color: colors.textMuted },
   trocoValor: { fontSize: font.size.xl, fontWeight: font.weight.heavy, color: colors.primaryDark },
   aviso: { fontSize: font.size.xs, color: colors.textFaint },
+  pix: {
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+    backgroundColor: colors.accentBg,
+    borderWidth: 1,
+    borderColor: palette.gold300,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+  },
+  pixTitulo: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.primaryDark },
+  pixTexto: { fontSize: font.size.sm, color: colors.text, lineHeight: 21 },
+  pixBotao: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pixBotaoTexto: { fontSize: font.size.md, fontWeight: font.weight.bold, color: colors.onPrimary },
 });

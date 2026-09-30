@@ -23,6 +23,7 @@ export default function LayoutRaiz() {
           <Stack.Screen name="inicio" />
           <Stack.Screen name="corrida" />
           <Stack.Screen name="carteira" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="recarga" />
           <Stack.Screen name="motorista" />
           <Stack.Screen name="admin" />
         </Stack>

@@ -11,6 +11,7 @@ export type Passo = 1 | 2 | 3 | 4 | 5;
 export type StatusAlerta03 = 'ativo' | 'encerrado';
 export type FormaPagamento = 'carteira' | 'dinheiro';
 export type TipoChavePix = 'cnpj' | 'cpf' | 'celular' | 'email' | 'aleatoria';
+export type StatusRecargaPix = 'pendente' | 'aprovada' | 'recusada';
 
 export type CategoriaRow = {
   chave: string;
@@ -137,6 +138,28 @@ export type ContaRecebimentoRow = {
   atualizado_em: string;
 };
 
+export type RecargaPixRow = {
+  id: string;
+  passageiro_id: string;
+  conta_id: string | null;
+  /** Copia da conta no momento do pedido. */
+  conta_banco: string;
+  conta_chave: string;
+  /** Valor que o passageiro informou. */
+  valor_centavos: number;
+  /** Vai no QR Code (txid) e aparece para o Admin conferir. */
+  codigo_referencia: string;
+  /** Caminho no bucket privado `comprovantes`. */
+  comprovante_path: string;
+  status: StatusRecargaPix;
+  /** Valor creditado de fato; o Admin pode corrigir pelo extrato. */
+  valor_aprovado_centavos: number | null;
+  motivo_recusa: string | null;
+  criada_em: string;
+  analisada_em: string | null;
+  analisada_por: string | null;
+};
+
 export type Alerta03Row = {
   id: string;
   passageiro_id: string;
@@ -180,6 +203,7 @@ export type Database = {
       cidades: Tabela<CidadeRow>;
       configuracoes: Tabela<ConfiguracaoRow>;
       contas_recebimento: Tabela<ContaRecebimentoRow>;
+      recargas_pix: Tabela<RecargaPixRow>;
       carteiras: Tabela<CarteiraRow>;
       transacoes: Tabela<TransacaoRow>;
       corridas: Tabela<CorridaRow>;
@@ -245,6 +269,23 @@ export type Database = {
       admin_creditar_carteira: {
         Args: { p_passageiro_id: string; p_valor_centavos: number; p_descricao?: string };
         Returns: number;
+      };
+      solicitar_recarga_pix: {
+        Args: {
+          p_conta_id: string;
+          p_valor_centavos: number;
+          p_comprovante_path: string;
+          p_codigo_referencia: string;
+        };
+        Returns: RecargaPixRow;
+      };
+      aprovar_recarga_pix: {
+        Args: { p_recarga_id: string; p_valor_centavos?: number | null };
+        Returns: RecargaPixRow;
+      };
+      recusar_recarga_pix: {
+        Args: { p_recarga_id: string; p_motivo: string };
+        Returns: RecargaPixRow;
       };
       eh_admin: { Args: Record<string, never>; Returns: boolean };
       eh_motorista: { Args: Record<string, never>; Returns: boolean };

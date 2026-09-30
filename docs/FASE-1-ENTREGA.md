@@ -56,6 +56,20 @@ Foto de perfil, foto do veículo, nome e placa.
 "Bem-vindo à REDE BRASIL HOJE", "Você chegou no local", "Você chegou no
 endereço" e "Obrigado por usar".
 
+**13A. Recarga da carteira por PIX, com comprovante**
+O passageiro escolhe PIX, vê as duas contas da empresa e paga no app do banco
+dele. Cada conta mostra:
+- **Santander** — REDE BRASIL HOJE LTDA — CNPJ 62.142.941/0001-17
+- **Nubank** — CNPJ 53.077.671/0001-17
+
+Em cada uma: **QR Code para escanear**, **PIX copia e cola** com botão de
+copiar, e a chave com botão de copiar. O QR e o copia e cola já levam o valor
+escolhido, e seguem o padrão BR Code do Banco Central (conferido com leitor de
+QR e com biblioteca independente). Depois de pagar, o passageiro toca em "Já
+paguei — enviar comprovante", manda a foto do comprovante (galeria ou câmera) e
+acompanha o status em "Minha carteira": aguardando, aprovada ou recusada com o
+motivo. Aprovada, o valor entra no saldo sozinho, sem sair e entrar de novo.
+
 ---
 
 ## Painel do motorista
@@ -96,9 +110,22 @@ Editar os valores de cada categoria, a taxa da empresa e o fator de distância.
 A taxa tem piso de 25% travado no banco: nenhuma tela e nenhum atalho gravam
 abaixo disso.
 
+**21A. Fila de recargas PIX**
+Aba "Recargas PIX", com o número de pedidos aguardando visível de qualquer aba.
+Cada pedido mostra passageiro, CPF, telefone, valor, conta, código da recarga e
+a foto do comprovante, que abre em tela cheia. O Admin confere no extrato e:
+- **aprova** — pode corrigir o valor para o que caiu de fato; o crédito entra
+  na carteira uma única vez, mesmo com dois cliques ou dois admins ao mesmo
+  tempo;
+- **recusa** — com motivo obrigatório, que o passageiro vê no app.
+
+Os comprovantes ficam em área privada: só o passageiro dono e o Admin abrem, e
+ninguém troca nem apaga um comprovante depois de enviado.
+
 **22. Empresa e chaves PIX**
-Razão social, CNPJ e chaves PIX editáveis. Trocar qualquer um deles não exige
-nova versão do aplicativo.
+Razão social, CNPJ, cidade e chaves PIX editáveis, com prévia do QR Code de
+cada conta. Cada conta pode ser editada, desativada ou removida. Trocar
+qualquer um deles não exige nova versão do aplicativo.
 
 **23. Cidades**
 Cadastro ilimitado de cidades.
@@ -116,11 +143,11 @@ Lista de motoristas, quem está ativo e quem completou o cadastro.
 
 **27. Código-fonte completo**, com as instruções de build.
 
-**28. Banco de dados** com 15 migrações versionadas, controle de acesso por
+**28. Banco de dados** com 16 migrações versionadas, controle de acesso por
 papel e as regras de dinheiro protegidas no servidor.
 
-**29. Teste automatizado** (`npm run test:fluxo`): 79 verificações contra o
-banco real, incluindo as regras de dinheiro e de permissão.
+**29. Teste automatizado** (`npm run test:fluxo`): 110 verificações contra o
+banco real, incluindo as regras de dinheiro, de permissão e da recarga PIX.
 
 ---
 
@@ -132,7 +159,8 @@ Combinado ao longo do projeto e detalhado em [FASE-2-ESCOPO.md](FASE-2-ESCOPO.md
 - **distância por rota de rua** — hoje é estimada, com fator de correção;
 - **partida e chegada automáticas por GPS** e avisos de 2 km, 1 km, 500 m;
 - **gateway de pagamento**, cartão, PIX automático e divisão automática do
-  dinheiro — a Fase 1 calcula e registra o rateio, o repasse é feito por vocês;
+  dinheiro — na Fase 1 o PIX é manual (comprovante conferido pelo Admin), a
+  Fase 1 calcula e registra o rateio, e o repasse é feito por vocês;
 - **publicação na Play Store**;
 - **gravação de áudio no 03** e ligação automática para a polícia.
 

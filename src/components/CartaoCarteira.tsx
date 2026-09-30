@@ -8,10 +8,12 @@ import { colors, font, palette, radius, shadow, spacing } from '../theme';
 type Props = {
   saldoCentavos: number | null;
   onVerExtrato?: () => void;
+  /** Abre a recarga por PIX. Sem ela, o botao nao aparece. */
+  onAdicionarSaldo?: () => void;
   carregando?: boolean;
 };
 
-export function CartaoCarteira({ saldoCentavos, onVerExtrato, carregando }: Props) {
+export function CartaoCarteira({ saldoCentavos, onVerExtrato, onAdicionarSaldo, carregando }: Props) {
   const saldo = saldoCentavos ?? 0;
   const zerado = saldo <= 0;
 
@@ -35,11 +37,23 @@ export function CartaoCarteira({ saldoCentavos, onVerExtrato, carregando }: Prop
         <Text style={estilos.aviso}>
           {CARTEIRA.modo === 'saldo_simples'
             ? `Sem saldo. A recarga e feita pela central da ${MARCA.empresa} nesta fase.`
-            : 'Sem saldo. Faca uma recarga para chamar.'}
+            : 'Sem saldo. Adicione saldo por PIX para chamar pela carteira.'}
         </Text>
       ) : null}
 
-      {onVerExtrato ? (
+      {onAdicionarSaldo || onVerExtrato ? (
+        <View style={estilos.acoes}>
+          {onAdicionarSaldo ? (
+            <Pressable
+              onPress={onAdicionarSaldo}
+              accessibilityRole="button"
+              accessibilityLabel="Adicionar saldo por PIX"
+              style={({ pressed }) => [estilos.botaoPix, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={estilos.botaoPixTexto}>+ Adicionar saldo por PIX</Text>
+            </Pressable>
+          ) : null}
+          {onVerExtrato ? (
         <Pressable
           onPress={onVerExtrato}
           accessibilityRole="button"
@@ -48,6 +62,8 @@ export function CartaoCarteira({ saldoCentavos, onVerExtrato, carregando }: Prop
         >
           <Text style={estilos.link}>Ver extrato</Text>
         </Pressable>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -91,6 +107,15 @@ const estilos = StyleSheet.create({
   },
   explicacao: { fontSize: font.size.xs, color: palette.navy100 },
   aviso: { fontSize: font.size.xs, color: palette.gold300 },
+  acoes: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, flexWrap: 'wrap' },
+  botaoPix: {
+    backgroundColor: palette.gold500,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.lg,
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  botaoPixTexto: { fontSize: font.size.sm, fontWeight: font.weight.bold, color: palette.navy900 },
   link: {
     fontSize: font.size.sm,
     color: palette.gold300,

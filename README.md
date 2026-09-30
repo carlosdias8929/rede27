@@ -179,7 +179,7 @@ período de teste fechado exigido pelo Google.
 ## O que ficou para a fase 2
 
 Gravação de áudio no 03, ligação automática para a polícia, rastreamento em
-segundo plano, repasse automático ao motorista, recarga por pagamento, consulta
+segundo plano, repasse automático ao motorista, PIX automático por gateway, consulta
 de CPF em base externa, API de rotas paga e publicação na Play Store.
 
 Pendências abertas: [docs/PENDENCIAS.md](docs/PENDENCIAS.md).

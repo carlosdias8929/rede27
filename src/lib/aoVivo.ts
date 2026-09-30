@@ -31,7 +31,7 @@ export function useAoVivo({
 }: {
   /** Nome unico do canal. Dois canais com o mesmo nome se atrapalham. */
   canal: string;
-  tabela: 'corridas' | 'alertas_03';
+  tabela: 'corridas' | 'alertas_03' | 'recargas_pix';
   /** Filtro do postgres_changes, ex.: `id=eq.<uuid>`. Sem filtro, ouve a tabela toda. */
   filtro?: string;
   /** Recarrega o estado a partir do banco. Deve ser idempotente. */

@@ -13,7 +13,9 @@
  *   - isolamento: passageiro nao ve nem mexe na corrida alheia;
  *   - ciclo de 5 passos ate o debito, com rateio empresa/motorista;
  *   - protocolo 03: passageiro aciona, so o Admin avanca e encerra, e o
- *     motorista nao enxerga o alerta.
+ *     motorista nao enxerga o alerta;
+ *   - recarga PIX: comprovante na pasta do dono, fila do Admin, aprovacao
+ *     credita uma vez so, recusa com motivo, ninguem aprova a si mesmo.
  *
  * O script avisa o que falta preparar e imprime o SQL pronto.
  */
@@ -147,6 +149,12 @@ ok('app nao executa creditar_carteira', Boolean(credito.error), credito.error?.m
 
 secao('3. Fotos obrigatorias do motorista');
 
+// Guarda o perfil de demonstracao para devolver depois: o teste apaga as fotos
+// para provar a regra, mas o cliente usa esta mesma conta para testar e precisa
+// ver as fotos reais durante a corrida.
+const perfilOriginal = (await MOT.c.from('motoristas').select('*').eq('id', MOT.uid).maybeSingle()).data;
+const fotoReal = (u) => (u && !u.includes('exemplo.invalido') ? u : null);
+
 const semFoto = await MOT.c
   .from('motoristas')
   .update({ foto_perfil_url: null, foto_veiculo_url: null })
@@ -262,14 +270,15 @@ ok(
   aceiteSemFoto.error?.message ?? 'ACEITOU!',
 );
 
-// Preenche as fotos com URLs sinteticas: o teste valida a regra, nao o upload.
+// Devolve as fotos reais do perfil de demonstracao. So se a conta nunca teve
+// foto usa URLs sinteticas: o teste valida a regra, nao o upload.
 await MOT.c
   .from('motoristas')
   .update({
-    foto_perfil_url: 'https://exemplo.invalido/perfil.jpg',
-    foto_veiculo_url: 'https://exemplo.invalido/veiculo.jpg',
-    veiculo_descricao: 'Fiat Uno branco',
-    veiculo_placa: 'ABC1D23',
+    foto_perfil_url: fotoReal(perfilOriginal?.foto_perfil_url) ?? 'https://exemplo.invalido/perfil.jpg',
+    foto_veiculo_url: fotoReal(perfilOriginal?.foto_veiculo_url) ?? 'https://exemplo.invalido/veiculo.jpg',
+    veiculo_descricao: perfilOriginal?.veiculo_descricao || 'Fiat Uno branco',
+    veiculo_placa: perfilOriginal?.veiculo_placa || 'ABC1D23',
   })
   .eq('id', MOT.uid);
 
@@ -646,7 +655,185 @@ ok('admin administra chave PIX', !adminMexeConta.error && (adminMexeConta.data?.
 const cnpj = await ADM.c.from('configuracoes').select('valor').eq('chave','empresa_cnpj').maybeSingle();
 ok('CNPJ da empresa e editavel no painel', Boolean(cnpj.data?.valor), cnpj.data?.valor ?? '');
 
-secao('16. Nova corrida apos encerrar');
+secao('16. Recarga por PIX com comprovante');
+
+// Contas definidas pelo cliente: so Santander e Nubank, BTG fora.
+const contasPix = (await A.c.from('contas_recebimento').select('*').order('ordem')).data ?? [];
+ok('passageiro ve exatamente as 2 contas PIX (Santander e Nubank)',
+  contasPix.length === 2 && contasPix[0].banco === 'Santander' && contasPix[1].banco === 'Nubank',
+  contasPix.map((c) => `${c.banco}/${c.chave}`).join(', '));
+ok('BTG Pactual nao aparece mais', !contasPix.some((c) => /BTG/i.test(c.banco)));
+ok('Santander e o CNPJ da REDE BRASIL HOJE',
+  contasPix[0]?.chave === '62142941000117' && contasPix[0]?.tipo_chave === 'cnpj', contasPix[0]?.chave);
+ok('Nubank e o CNPJ 53.077.671/0001-17',
+  contasPix[1]?.chave === '53077671000117' && contasPix[1]?.tipo_chave === 'cnpj', contasPix[1]?.chave);
+
+// Um PNG de 1x1 serve de comprovante: o teste valida a regra, nao a imagem.
+const png = Uint8Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64'));
+const codigoTeste = () => 'R27T' + Math.random().toString(36).slice(2, 10).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
+const enviarComprovante = (cli, pasta) =>
+  cli.storage.from('comprovantes').upload(`${pasta}/${Date.now()}-${Math.random().toString(36).slice(2)}.png`, png, {
+    contentType: 'image/png', upsert: false,
+  });
+
+const up = await enviarComprovante(A.c, A.uid);
+ok('passageiro envia comprovante na propria pasta', !up.error, up.error?.message ?? up.data?.path);
+const caminhoA = up.data?.path;
+
+const upAlheio = await enviarComprovante(A.c, B.uid);
+ok('passageiro NAO envia comprovante na pasta de outro', Boolean(upAlheio.error), upAlheio.error?.message ?? 'ENVIOU!');
+
+const semArquivo = await A.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[0].id, p_valor_centavos: 2500,
+  p_comprovante_path: `${A.uid}/nao-existe.png`, p_codigo_referencia: codigoTeste(),
+});
+ok('pedido sem arquivo enviado e recusado', /Envie a foto do comprovante/.test(semArquivo.error?.message ?? ''),
+  semArquivo.error?.message ?? 'ACEITOU!');
+
+const caminhoDeOutro = await B.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[0].id, p_valor_centavos: 2500,
+  p_comprovante_path: caminhoA, p_codigo_referencia: codigoTeste(),
+});
+ok('ninguem usa o comprovante de outro passageiro', /Comprovante invalido/.test(caminhoDeOutro.error?.message ?? ''),
+  caminhoDeOutro.error?.message ?? 'ACEITOU!');
+
+const motPede = await MOT.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[0].id, p_valor_centavos: 2500,
+  p_comprovante_path: caminhoA, p_codigo_referencia: codigoTeste(),
+});
+ok('motorista nao faz recarga de passageiro', /Somente passageiros/.test(motPede.error?.message ?? ''),
+  motPede.error?.message ?? 'ACEITOU!');
+
+const pedido = await A.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[0].id, p_valor_centavos: 2500,
+  p_comprovante_path: caminhoA, p_codigo_referencia: codigoTeste(),
+});
+const rec = Array.isArray(pedido.data) ? pedido.data[0] : pedido.data;
+ok('passageiro registra recarga de R$ 25,00', !pedido.error && rec?.status === 'pendente',
+  pedido.error?.message ?? `${rec?.status} ${rec?.conta_banco} ${rec?.codigo_referencia}`);
+
+const comprovanteRepetido = await A.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[0].id, p_valor_centavos: 2500,
+  p_comprovante_path: caminhoA, p_codigo_referencia: codigoTeste(),
+});
+ok('o mesmo comprovante nao entra duas vezes', /ja foi enviado/.test(comprovanteRepetido.error?.message ?? ''),
+  comprovanteRepetido.error?.message ?? 'ACEITOU!');
+
+const escritaDireta = await A.c.from('recargas_pix').update({ status: 'aprovada' }).eq('id', rec.id).select();
+ok('passageiro NAO aprova escrevendo na tabela',
+  !escritaDireta.error && (escritaDireta.data?.length ?? 0) === 0,
+  escritaDireta.error?.message ?? `${escritaDireta.data?.length} linha(s)`);
+
+const insercaoDireta = await A.c.from('recargas_pix').insert({
+  passageiro_id: A.uid, conta_banco: 'x', conta_chave: 'x', valor_centavos: 100,
+  codigo_referencia: 'X', comprovante_path: `${A.uid}/x.png`,
+});
+ok('passageiro NAO cria pedido direto na tabela', Boolean(insercaoDireta.error), insercaoDireta.error?.message ?? 'INSERIU!');
+
+const autoAprova = await A.c.rpc('aprovar_recarga_pix', { p_recarga_id: rec.id });
+ok('passageiro NAO aprova a propria recarga', /Apenas o painel Admin/.test(autoAprova.error?.message ?? ''),
+  autoAprova.error?.message ?? 'APROVOU!');
+
+const motAprova = await MOT.c.rpc('aprovar_recarga_pix', { p_recarga_id: rec.id });
+ok('motorista NAO aprova recarga', /Apenas o painel Admin/.test(motAprova.error?.message ?? ''),
+  motAprova.error?.message ?? 'APROVOU!');
+
+const bVe = await B.c.from('recargas_pix').select('id').eq('id', rec.id);
+ok('outro passageiro NAO ve a recarga alheia', !bVe.error && (bVe.data?.length ?? 0) === 0,
+  bVe.error?.message ?? `${bVe.data?.length} linha(s)`);
+
+const bLe = await B.c.storage.from('comprovantes').createSignedUrl(caminhoA, 60);
+ok('outro passageiro NAO abre o comprovante alheio', Boolean(bLe.error) || !bLe.data?.signedUrl,
+  bLe.error?.message ?? 'ABRIU!');
+
+const admLe = await ADM.c.storage.from('comprovantes').createSignedUrl(caminhoA, 60);
+ok('admin abre o comprovante', !admLe.error && Boolean(admLe.data?.signedUrl), admLe.error?.message ?? '');
+
+const admFila = await ADM.c.from('recargas_pix').select('*').eq('status', 'pendente');
+ok('pedido aparece na fila do admin', !admFila.error && admFila.data.some((r) => r.id === rec.id),
+  admFila.error?.message ?? `${admFila.data?.length} pendente(s)`);
+
+const saldoAntesPix = (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle()).data?.saldo_centavos ?? 0;
+
+// Caiu R$ 20,00 no extrato, nao R$ 25,00: o admin aprova o valor real.
+const aprova = await ADM.c.rpc('aprovar_recarga_pix', { p_recarga_id: rec.id, p_valor_centavos: 2000 });
+const aprovada = Array.isArray(aprova.data) ? aprova.data[0] : aprova.data;
+ok('admin aprova com o valor conferido no extrato',
+  !aprova.error && aprovada?.status === 'aprovada' && aprovada?.valor_aprovado_centavos === 2000,
+  aprova.error?.message ?? `${aprovada?.status} ${brl(aprovada?.valor_aprovado_centavos ?? 0)}`);
+
+const saldoDepoisPix = (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle()).data?.saldo_centavos ?? 0;
+ok('aprovado entra na carteira', saldoDepoisPix - saldoAntesPix === 2000,
+  `${brl(saldoAntesPix)} -> ${brl(saldoDepoisPix)}`);
+
+const lancPix = await A.c.from('transacoes').select('*').ilike('descricao', `%${aprovada?.codigo_referencia}%`);
+ok('extrato mostra "Recarga PIX aprovada"',
+  (lancPix.data?.length ?? 0) === 1 && /Recarga PIX aprovada - Santander/.test(lancPix.data[0].descricao),
+  lancPix.data?.[0]?.descricao ?? lancPix.error?.message ?? 'sem lancamento');
+
+const duplo = await ADM.c.rpc('aprovar_recarga_pix', { p_recarga_id: rec.id });
+const saldoAposDuplo = (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle()).data?.saldo_centavos ?? 0;
+ok('aprovar de novo NAO credita duas vezes',
+  /ja foi analisada/.test(duplo.error?.message ?? '') && saldoAposDuplo === saldoDepoisPix,
+  duplo.error?.message ?? 'CREDITOU DE NOVO!');
+
+// Recusa: exige motivo, nao credita, e o passageiro ve o motivo.
+const up2 = await enviarComprovante(A.c, A.uid);
+const pedido2 = await A.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[1].id, p_valor_centavos: 3000,
+  p_comprovante_path: up2.data?.path, p_codigo_referencia: codigoTeste(),
+});
+const rec2 = Array.isArray(pedido2.data) ? pedido2.data[0] : pedido2.data;
+ok('segunda recarga, no Nubank', !pedido2.error && rec2?.conta_banco === 'Nubank', pedido2.error?.message ?? rec2?.conta_banco);
+
+const semMotivo = await ADM.c.rpc('recusar_recarga_pix', { p_recarga_id: rec2.id, p_motivo: '  ' });
+ok('recusar exige motivo', /Informe o motivo/.test(semMotivo.error?.message ?? ''), semMotivo.error?.message ?? 'RECUSOU SEM MOTIVO!');
+
+const recusa = await ADM.c.rpc('recusar_recarga_pix', { p_recarga_id: rec2.id, p_motivo: 'PIX nao encontrado no extrato' });
+const saldoAposRecusa = (await A.c.from('carteiras').select('saldo_centavos').eq('passageiro_id', A.uid).maybeSingle()).data?.saldo_centavos ?? 0;
+ok('recusada NAO mexe no saldo', !recusa.error && saldoAposRecusa === saldoAposDuplo,
+  recusa.error?.message ?? `${brl(saldoAposDuplo)} -> ${brl(saldoAposRecusa)}`);
+
+const vistaPassageiro = (await A.c.from('recargas_pix').select('status, motivo_recusa').eq('id', rec2.id).maybeSingle()).data;
+ok('passageiro ve a recusa e o motivo',
+  vistaPassageiro?.status === 'recusada' && vistaPassageiro?.motivo_recusa === 'PIX nao encontrado no extrato',
+  `${vistaPassageiro?.status}: ${vistaPassageiro?.motivo_recusa}`);
+
+const aprovaRecusada = await ADM.c.rpc('aprovar_recarga_pix', { p_recarga_id: rec2.id });
+ok('recarga recusada nao pode ser aprovada depois', /ja foi analisada/.test(aprovaRecusada.error?.message ?? ''),
+  aprovaRecusada.error?.message ?? 'APROVOU!');
+
+// Freio de fila: no maximo 3 aguardando por passageiro.
+const abertas = [];
+for (let i = 0; i < 4; i++) {
+  const u = await enviarComprovante(B.c, B.uid);
+  const r = await B.c.rpc('solicitar_recarga_pix', {
+    p_conta_id: contasPix[0].id, p_valor_centavos: 1000,
+    p_comprovante_path: u.data?.path, p_codigo_referencia: codigoTeste(),
+  });
+  abertas.push(r);
+}
+ok('ate 3 recargas aguardando por passageiro', abertas.slice(0, 3).every((r) => !r.error),
+  abertas.slice(0, 3).map((r) => r.error?.message ?? 'ok').join(' | '));
+ok('a quarta espera a analise', /3 recargas aguardando/.test(abertas[3].error?.message ?? ''),
+  abertas[3].error?.message ?? 'ACEITOU!');
+
+// Limpa a fila do teste, para o painel nao ficar com pedido falso aguardando.
+for (const r of abertas.slice(0, 3)) {
+  const d = Array.isArray(r.data) ? r.data[0] : r.data;
+  if (d?.id) await ADM.c.rpc('recusar_recarga_pix', { p_recarga_id: d.id, p_motivo: 'Teste automatico' });
+}
+
+const valorAlto = await A.c.rpc('solicitar_recarga_pix', {
+  p_conta_id: contasPix[0].id, p_valor_centavos: 100001,
+  p_comprovante_path: `${A.uid}/qualquer.png`, p_codigo_referencia: codigoTeste(),
+});
+ok('recarga acima de R$ 1.000,00 e recusada', /acima do limite/.test(valorAlto.error?.message ?? ''),
+  valorAlto.error?.message ?? 'ACEITOU!');
+
+secao('17. Nova corrida apos encerrar');
 
 const nova = await A.c.rpc('criar_corrida', {
   p_categoria_chave: 'sem_ar',

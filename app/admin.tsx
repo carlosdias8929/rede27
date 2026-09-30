@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AbaEmpresa } from '../src/components/AbaEmpresa';
+import { AbaRecargas, usePendentesRecarga } from '../src/components/AbaRecargas';
 import { Botao } from '../src/components/Botao';
 import { Campo } from '../src/components/Campo';
 import { Logo } from '../src/components/Logo';
@@ -37,7 +38,15 @@ import type {
   PassageiroRow,
 } from '../src/types/database';
 
-type Aba = 'alertas' | 'corridas' | 'carteiras' | 'precos' | 'empresa' | 'cidades' | 'motoristas';
+type Aba =
+  | 'alertas'
+  | 'recargas'
+  | 'corridas'
+  | 'carteiras'
+  | 'precos'
+  | 'empresa'
+  | 'cidades'
+  | 'motoristas';
 
 /** PAINEL ADMIN (web). */
 export default function PainelAdmin() {
@@ -141,9 +150,11 @@ function Painel() {
   const insets = useSafeAreaInsets();
   const [aba, setAba] = useState<Aba>('alertas');
   const [alertasAtivos, setAlertasAtivos] = useState(0);
+  const recargasPendentes = usePendentesRecarga();
 
   const abas: Array<{ chave: Aba; rotulo: string }> = [
     { chave: 'alertas', rotulo: `Protocolo 03${alertasAtivos ? ` (${alertasAtivos})` : ''}` },
+    { chave: 'recargas', rotulo: `Recargas PIX${recargasPendentes ? ` (${recargasPendentes})` : ''}` },
     { chave: 'corridas', rotulo: 'Corridas' },
     { chave: 'carteiras', rotulo: 'Carteiras' },
     { chave: 'precos', rotulo: 'Precos e taxa' },
@@ -185,6 +196,7 @@ function Painel() {
         contentContainerStyle={[estilos.conteudo, { paddingBottom: insets.bottom + spacing.xxl }]}
       >
         {aba === 'alertas' ? <AbaAlertas onContar={setAlertasAtivos} /> : null}
+        {aba === 'recargas' ? <AbaRecargas /> : null}
         {aba === 'corridas' ? <AbaCorridas /> : null}
         {aba === 'carteiras' ? <AbaCarteiras /> : null}
         {aba === 'precos' ? <AbaPrecos /> : null}
@@ -651,8 +663,8 @@ function AbaCarteiras() {
     <View style={estilos.secao}>
       <Text style={estilos.secaoTitulo}>Carteiras dos passageiros</Text>
       <Text style={estilos.nota}>
-        Nesta fase o saldo e lancado pela central. A recarga pelo proprio passageiro entra quando
-        houver pagamento integrado. Limite de R$ 1.000,00 por lancamento.
+        Credito manual da central (ex.: dinheiro recebido no balcao). Recarga por PIX com
+        comprovante fica na aba Recargas PIX. Limite de R$ 1.000,00 por lancamento.
       </Text>
 
       {erro ? (

@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Botao } from '../src/components/Botao';
 import { CartaoCarteira } from '../src/components/CartaoCarteira';
+import { MinhasRecargas } from '../src/components/MinhasRecargas';
 import { CARTEIRA, MARCA } from '../src/config/rede27.config';
 import { brl, dataHoraCurta, paraReais } from '../src/lib/format';
 import { supabase } from '../src/lib/supabase';
@@ -14,7 +15,7 @@ import type { TransacaoRow } from '../src/types/database';
 
 /** Extrato da carteira do passageiro. */
 export default function Carteira() {
-  const { session, carteira, carregando: carregandoSessao, recarregarCarteira } = useSessao();
+  const { session, papel, carteira, carregando: carregandoSessao, recarregarCarteira } = useSessao();
   const insets = useSafeAreaInsets();
 
   const [transacoes, setTransacoes] = useState<TransacaoRow[]>([]);
@@ -36,6 +37,12 @@ export default function Carteira() {
     setTransacoes(data ?? []);
     setCarregando(false);
   }, [carteira?.id]);
+
+  // Recarga aprovada pelo Admin: sobe o saldo e o extrato sem sair da tela.
+  const aoMudarRecargas = useCallback(() => {
+    recarregarCarteira();
+    carregar();
+  }, [recarregarCarteira, carregar]);
 
   useEffect(() => {
     recarregarCarteira();
@@ -61,10 +68,12 @@ export default function Carteira() {
       </View>
 
       <View style={estilos.bloco}>
-        <CartaoCarteira saldoCentavos={carteira?.saldo_centavos ?? 0} />
+        <CartaoCarteira
+          saldoCentavos={carteira?.saldo_centavos ?? 0}
+          carregando={!carteira}
+          onAdicionarSaldo={papel === 'passageiro' ? () => router.push('/recarga') : undefined}
+        />
       </View>
-
-      <Text style={estilos.secao}>Extrato</Text>
 
       {carregando ? (
         <ActivityIndicator color={colors.primary} style={estilos.spinner} />
@@ -72,6 +81,14 @@ export default function Carteira() {
         <FlatList
           data={transacoes}
           keyExtractor={(item) => item.id}
+          ListHeaderComponent={
+            <View style={estilos.cabecalhoLista}>
+              {session.user.id ? (
+                <MinhasRecargas passageiroId={session.user.id} aoMudar={aoMudarRecargas} />
+              ) : null}
+              <Text style={estilos.secao}>Extrato</Text>
+            </View>
+          }
           contentContainerStyle={[
             estilos.lista,
             { paddingBottom: insets.bottom + spacing.xxl },
@@ -83,7 +100,7 @@ export default function Carteira() {
               <Text style={estilos.vazioTexto}>
                 {CARTEIRA.modo === 'saldo_simples'
                   ? `Os creditos sao lancados pela central da ${MARCA.empresa} nesta fase.`
-                  : 'Faca uma recarga para comecar a usar.'}
+                  : 'Adicione saldo por PIX para comecar a usar.'}
               </Text>
             </View>
           }
@@ -92,7 +109,7 @@ export default function Carteira() {
             return (
               <View style={estilos.item}>
                 <View style={estilos.itemInfo}>
-                  <Text style={estilos.itemDescricao} numberOfLines={1}>
+                  <Text style={estilos.itemDescricao} numberOfLines={2}>
                     {item.descricao || (credito ? 'Credito' : 'Debito')}
                   </Text>
                   <Text style={estilos.itemData}>{dataHoraCurta(item.criado_em)}</Text>
@@ -125,16 +142,15 @@ const estilos = StyleSheet.create({
   },
   titulo: { fontSize: font.size.xl, fontWeight: font.weight.bold, color: colors.primaryDark },
   bloco: { padding: spacing.lg },
+  cabecalhoLista: { gap: spacing.lg, paddingBottom: spacing.sm },
   secao: {
     fontSize: font.size.sm,
     fontWeight: font.weight.semibold,
     color: colors.textMuted,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
   },
   spinner: { marginTop: spacing.xl },
   lista: { paddingHorizontal: spacing.lg, gap: spacing.sm },
-  listaVazia: { flexGrow: 1, justifyContent: 'center' },
+  listaVazia: { flexGrow: 1 },
   item: {
     flexDirection: 'row',
     alignItems: 'center',
