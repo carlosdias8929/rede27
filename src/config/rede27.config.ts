@@ -170,7 +170,7 @@ export const CATEGORIAS: Categoria[] = [
   },
   {
     chave: 'transporte_bens',
-    nome: 'Transporte de Bens',
+    nome: 'Encomenda',
     descricao: 'Envelope ou caixa pequena em carro de passeio.',
     tarifaBase: 12.0,
     precoKm: 3.5,

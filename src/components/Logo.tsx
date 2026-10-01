@@ -1,32 +1,40 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
-import { colors, font, palette, radius, spacing } from '../theme';
+import { colors, font, palette, spacing } from '../theme';
+
+// Logomarca oficial enviada pelo cliente (Rede Vinte e Sete). O arquivo
+// original veio com fundo branco; este e o mesmo desenho com o fundo recortado
+// ao redor do circulo, para nao aparecer um quadrado branco nos cabecalhos
+// escuros.
+const LOGO = require('../../assets/logo-rede27.png');
 
 type Props = {
   tamanho?: 'md' | 'lg';
-  /** Em fundo escuro o "REDE" fica branco; em fundo claro, azul escuro. */
+  /** Em fundo escuro ganha um aro dourado, porque o azul da logo some no azul do cabecalho. */
   sobreEscuro?: boolean;
   mostrarSlogan?: boolean;
 };
 
 export function Logo({ tamanho = 'md', sobreEscuro = false, mostrarSlogan = false }: Props) {
-  const grande = tamanho === 'lg';
-  const corRede = sobreEscuro ? colors.textOnDark : colors.primaryDark;
+  const lado = tamanho === 'lg' ? 112 : 52;
   const corSlogan = sobreEscuro ? palette.navy100 : colors.textMuted;
 
   return (
     <View style={estilos.container} accessibilityRole="header">
-      <View style={estilos.linha}>
-        <Text
-          style={[estilos.rede, grande && estilos.redeGrande, { color: corRede }]}
+      <View
+        style={[
+          { width: lado, height: lado, borderRadius: lado / 2 },
+          sobreEscuro && estilos.aro,
+        ]}
+      >
+        <Image
+          source={LOGO}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="contain"
           accessibilityLabel="REDE 27"
-        >
-          REDE
-        </Text>
-        <View style={[estilos.selo, grande && estilos.seloGrande]}>
-          <Text style={[estilos.numero, grande && estilos.numeroGrande]}>27</Text>
-        </View>
+          accessibilityIgnoresInvertColors
+        />
       </View>
 
       {mostrarSlogan ? (
@@ -39,30 +47,8 @@ export function Logo({ tamanho = 'md', sobreEscuro = false, mostrarSlogan = fals
 }
 
 const estilos = StyleSheet.create({
-  container: { alignItems: 'center', gap: spacing.xs },
-  linha: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  rede: {
-    fontSize: font.size.xxl,
-    fontWeight: font.weight.heavy,
-    letterSpacing: 2,
-  },
-  redeGrande: { fontSize: font.size.display, letterSpacing: 3 },
-  selo: {
-    backgroundColor: palette.gold300,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: palette.gold500,
-  },
-  seloGrande: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
-  numero: {
-    fontSize: font.size.xl,
-    fontWeight: font.weight.heavy,
-    color: palette.navy900,
-    letterSpacing: 1,
-  },
-  numeroGrande: { fontSize: font.size.xxl },
+  container: { alignItems: 'center', gap: spacing.sm },
+  aro: { borderWidth: 2, borderColor: palette.gold500, padding: 1 },
   slogan: {
     fontSize: font.size.xs,
     fontWeight: font.weight.medium,
